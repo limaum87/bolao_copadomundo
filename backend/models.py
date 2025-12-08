@@ -1,0 +1,81 @@
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.orm import declarative_base, relationship
+
+
+Base = declarative_base()
+
+
+def generate_uid() -> str:
+    return uuid.uuid4().hex
+
+
+class Participant(Base):
+    __tablename__ = "participants"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    uid = Column(String, unique=True, default=generate_uid, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    predictions = relationship("Prediction", back_populates="participant", cascade="all, delete-orphan")
+    finals_prediction = relationship(
+        "FinalsPrediction", back_populates="participant", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class Game(Base):
+    __tablename__ = "games"
+
+    id = Column(Integer, primary_key=True)
+    kickoff = Column(DateTime, nullable=False)
+    team_a = Column(String, nullable=False)
+    team_b = Column(String, nullable=False)
+    score_a = Column(Integer, nullable=True)
+    score_b = Column(Integer, nullable=True)
+
+    predictions = relationship("Prediction", back_populates="game", cascade="all, delete-orphan")
+
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+    __table_args__ = (UniqueConstraint("participant_id", "game_id", name="uq_participant_game"),)
+
+    id = Column(Integer, primary_key=True)
+    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=False)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    goals_a = Column(Integer, nullable=False)
+    goals_b = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    participant = relationship("Participant", back_populates="predictions")
+    game = relationship("Game", back_populates="predictions")
+
+
+class FinalsPrediction(Base):
+    __tablename__ = "finals_predictions"
+    __table_args__ = (UniqueConstraint("participant_id", name="uq_participant_finals"),)
+
+    id = Column(Integer, primary_key=True)
+    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=False)
+    champion = Column(String, nullable=False)
+    runner_up = Column(String, nullable=False)
+    third_place = Column(String, nullable=False)
+    fourth_place = Column(String, nullable=False)
+
+    participant = relationship("Participant", back_populates="finals_prediction")
+
+
+class TournamentOutcome(Base):
+    __tablename__ = "tournament_outcome"
+
+    id = Column(Integer, primary_key=True, default=1)
+    champion = Column(String, nullable=True)
+    runner_up = Column(String, nullable=True)
+    third_place = Column(String, nullable=True)
+    fourth_place = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
