@@ -1,0 +1,317 @@
+import os
+from datetime import datetime
+from pathlib import Path
+from flask import Flask, jsonify, request, send_file
+from .database import engine, session_scope
+from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome
+from .scoring import calculate_scores, score_prediction
+
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = (BASE_DIR / "data.db").resolve()
+
+app = Flask(__name__)
+
+
+@app.before_first_request
+def setup_database():
+    ensure_db_exists()
+
+
+@app.route("/health")
+def health():
+    return {"status": "ok"}
+
+
+# Participants CRUD
+@app.route("/participants", methods=["GET", "POST"])
+def participants():
+    with session_scope() as session:
+        if request.method == "GET":
+            rows = session.query(Participant).all()
+            return jsonify([serialize_participant(row) for row in rows])
+
+        data = request.get_json()
+        participant = Participant(name=data.get("name"), email=data.get("email"))
+        session.add(participant)
+        session.flush()
+        return serialize_participant(participant), 201
+
+
+@app.route("/participants/<int:participant_id>", methods=["GET", "PUT", "DELETE"])
+def participant_detail(participant_id: int):
+    with session_scope() as session:
+        participant = session.get(Participant, participant_id)
+        if not participant:
+            return {"error": "Participant not found"}, 404
+
+        if request.method == "GET":
+            return serialize_participant(participant)
+
+        if request.method == "DELETE":
+            session.delete(participant)
+            return "", 204
+
+        data = request.get_json()
+        participant.name = data.get("name", participant.name)
+        participant.email = data.get("email", participant.email)
+        return serialize_participant(participant)
+
+
+# Games CRUD
+@app.route("/games", methods=["GET", "POST"])
+def games():
+    with session_scope() as session:
+        if request.method == "GET":
+            rows = session.query(Game).order_by(Game.kickoff).all()
+            return jsonify([serialize_game(row) for row in rows])
+
+        data = request.get_json()
+        game = Game(
+            kickoff=parse_date(data.get("kickoff")),
+            team_a=data.get("team_a"),
+            team_b=data.get("team_b"),
+            score_a=data.get("score_a"),
+            score_b=data.get("score_b"),
+        )
+        session.add(game)
+        session.flush()
+        return serialize_game(game), 201
+
+
+@app.route("/games/<int:game_id>", methods=["GET", "PUT", "DELETE"])
+def game_detail(game_id: int):
+    with session_scope() as session:
+        game = session.get(Game, game_id)
+        if not game:
+            return {"error": "Game not found"}, 404
+
+        if request.method == "GET":
+            return serialize_game(game)
+
+        if request.method == "DELETE":
+            session.delete(game)
+            return "", 204
+
+        data = request.get_json()
+        if "kickoff" in data:
+            game.kickoff = parse_date(data.get("kickoff"))
+        game.team_a = data.get("team_a", game.team_a)
+        game.team_b = data.get("team_b", game.team_b)
+        game.score_a = data.get("score_a", game.score_a)
+        game.score_b = data.get("score_b", game.score_b)
+        return serialize_game(game)
+
+
+# Predictions
+@app.route("/predictions", methods=["POST", "GET"])
+def predictions():
+    with session_scope() as session:
+        if request.method == "GET":
+            participant_uid = request.args.get("participant_uid")
+            query = session.query(Prediction)
+            if participant_uid:
+                participant = session.query(Participant).filter_by(uid=participant_uid).first()
+                if not participant:
+                    return {"error": "Participant not found"}, 404
+                query = query.filter(Prediction.participant_id == participant.id)
+            rows = query.all()
+            return jsonify([serialize_prediction(row) for row in rows])
+
+        data = request.get_json()
+        participant_uid = data.get("participant_uid")
+        participant = session.query(Participant).filter_by(uid=participant_uid).first()
+        if not participant:
+            return {"error": "Participant not found"}, 404
+
+        game = session.get(Game, data.get("game_id"))
+        if not game:
+            return {"error": "Game not found"}, 404
+
+        if game.kickoff <= datetime.utcnow():
+            return {"error": "Predictions are closed for this game"}, 400
+
+        existing = (
+            session.query(Prediction)
+            .filter_by(participant_id=participant.id, game_id=game.id)
+            .first()
+        )
+        if existing:
+            existing.goals_a = data.get("goals_a", existing.goals_a)
+            existing.goals_b = data.get("goals_b", existing.goals_b)
+            prediction = existing
+        else:
+            prediction = Prediction(
+                participant_id=participant.id,
+                game_id=game.id,
+                goals_a=data.get("goals_a"),
+                goals_b=data.get("goals_b"),
+            )
+            session.add(prediction)
+        session.flush()
+        return serialize_prediction(prediction), 201
+
+
+@app.route("/finals_predictions", methods=["POST", "GET"])
+def finals_predictions():
+    with session_scope() as session:
+        if request.method == "GET":
+            participant_uid = request.args.get("participant_uid")
+            query = session.query(FinalsPrediction)
+            if participant_uid:
+                query = query.join(Participant).filter(Participant.uid == participant_uid)
+            rows = query.all()
+            return jsonify([serialize_finals(row) for row in rows])
+
+        data = request.get_json()
+        participant_uid = data.get("participant_uid")
+        participant = session.query(Participant).filter_by(uid=participant_uid).first()
+        if not participant:
+            return {"error": "Participant not found"}, 404
+
+        record = (
+            session.query(FinalsPrediction)
+            .filter_by(participant_id=participant.id)
+            .first()
+        )
+        if not record:
+            record = FinalsPrediction(participant_id=participant.id)
+            session.add(record)
+
+        record.champion = data.get("champion", record.champion)
+        record.runner_up = data.get("runner_up", record.runner_up)
+        record.third_place = data.get("third_place", record.third_place)
+        record.fourth_place = data.get("fourth_place", record.fourth_place)
+        session.flush()
+        return serialize_finals(record), 201
+
+
+@app.route("/tournament_outcome", methods=["GET", "PUT"])
+def tournament_outcome():
+    with session_scope() as session:
+        outcome = session.query(TournamentOutcome).get(1)
+        if not outcome:
+            outcome = TournamentOutcome(id=1)
+            session.add(outcome)
+            session.flush()
+
+        if request.method == "GET":
+            return serialize_outcome(outcome)
+
+        data = request.get_json()
+        outcome.champion = data.get("champion", outcome.champion)
+        outcome.runner_up = data.get("runner_up", outcome.runner_up)
+        outcome.third_place = data.get("third_place", outcome.third_place)
+        outcome.fourth_place = data.get("fourth_place", outcome.fourth_place)
+        return serialize_outcome(outcome)
+
+
+@app.route("/scores", methods=["GET"])
+def scores():
+    with session_scope() as session:
+        participants = session.query(Participant).all()
+        games = session.query(Game).all()
+        predictions = session.query(Prediction).all()
+        finals_predictions = session.query(FinalsPrediction).all()
+        outcome = session.query(TournamentOutcome).get(1)
+
+        results = calculate_scores(
+            participants=participants,
+            games=games,
+            predictions=predictions,
+            finals_predictions=finals_predictions,
+            outcome=outcome,
+        )
+        return jsonify(results)
+
+
+@app.route("/score_preview", methods=["POST"])
+def score_preview():
+    data = request.get_json()
+    prediction_stub = Prediction(goals_a=data.get("goals_a"), goals_b=data.get("goals_b"))
+    game_stub = Game(score_a=data.get("score_a"), score_b=data.get("score_b"))
+    return {"points": score_prediction(prediction_stub, game_stub)}
+
+
+@app.route("/backup/export", methods=["GET"])
+def export_backup():
+    ensure_db_exists()
+    return send_file(DB_PATH, as_attachment=True, download_name="bolao_backup.sqlite")
+
+
+@app.route("/backup/import", methods=["POST"])
+def import_backup():
+    if "file" not in request.files:
+        return {"error": "Missing file"}, 400
+    file = request.files["file"]
+    ensure_db_exists()
+    file.save(DB_PATH)
+    return {"status": "imported"}
+
+
+def serialize_participant(participant: Participant):
+    return {
+        "id": participant.id,
+        "name": participant.name,
+        "email": participant.email,
+        "uid": participant.uid,
+        "created_at": participant.created_at.isoformat() if participant.created_at else None,
+    }
+
+
+def serialize_game(game: Game):
+    return {
+        "id": game.id,
+        "kickoff": game.kickoff.isoformat() if game.kickoff else None,
+        "team_a": game.team_a,
+        "team_b": game.team_b,
+        "score_a": game.score_a,
+        "score_b": game.score_b,
+    }
+
+
+def serialize_prediction(prediction: Prediction):
+    return {
+        "id": prediction.id,
+        "participant_id": prediction.participant_id,
+        "game_id": prediction.game_id,
+        "goals_a": prediction.goals_a,
+        "goals_b": prediction.goals_b,
+    }
+
+
+def serialize_finals(prediction: FinalsPrediction):
+    return {
+        "id": prediction.id,
+        "participant_id": prediction.participant_id,
+        "participant_uid": prediction.participant.uid if prediction.participant else None,
+        "champion": prediction.champion,
+        "runner_up": prediction.runner_up,
+        "third_place": prediction.third_place,
+        "fourth_place": prediction.fourth_place,
+    }
+
+
+def serialize_outcome(outcome: TournamentOutcome):
+    return {
+        "champion": outcome.champion,
+        "runner_up": outcome.runner_up,
+        "third_place": outcome.third_place,
+        "fourth_place": outcome.fourth_place,
+    }
+
+
+def parse_date(value: str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value)
+
+
+def ensure_db_exists():
+    os.makedirs(DB_PATH.parent, exist_ok=True)
+    Base.metadata.create_all(engine)
+
+
+if __name__ == "__main__":
+    ensure_db_exists()
+    app.run(debug=True, host="0.0.0.0", port=5000)
