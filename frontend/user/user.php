@@ -153,6 +153,7 @@ if (!$uid) {
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
 
+    <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const uid = '<?= $uid ?>';
@@ -209,11 +210,11 @@ if (!$uid) {
                     <div class="game-card-body">
                         <div class="game-teams">
                             <div class="team">
-                                <div class="team-name">${game.team_a}</div>
+                                <div class="team-name">${getTeamHtml(game.team_a)}</div>
                             </div>
                             <div class="game-vs">×</div>
                             <div class="team">
-                                <div class="team-name">${game.team_b}</div>
+                                <div class="team-name">${getTeamHtml(game.team_b)}</div>
                             </div>
                         </div>
                         <div class="game-prediction">
@@ -288,8 +289,8 @@ if (!$uid) {
 
         function openModal(gameId, teamA, teamB, goalsA, goalsB) {
             document.getElementById('modalGameId').value = gameId;
-            document.getElementById('modalTeamA').textContent = teamA;
-            document.getElementById('modalTeamB').textContent = teamB;
+            document.getElementById('modalTeamA').innerHTML = getTeamHtml(teamA);
+            document.getElementById('modalTeamB').innerHTML = getTeamHtml(teamB);
             document.getElementById('modalGoalsA').value = goalsA;
             document.getElementById('modalGoalsB').value = goalsB;
             document.getElementById('modalTitle').textContent = `${teamA} × ${teamB}`;

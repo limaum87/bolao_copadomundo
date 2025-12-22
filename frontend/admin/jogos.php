@@ -129,6 +129,7 @@ require_once __DIR__ . '/../config.php';
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
 
+    <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
 
@@ -171,7 +172,11 @@ require_once __DIR__ . '/../config.php';
                         <tr>
                             <td>${game.id}</td>
                             <td>${formatDate(game.kickoff)}</td>
-                            <td><strong>${game.team_a}</strong> × <strong>${game.team_b}</strong></td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    ${getTeamHtml(game.team_a)} <span>×</span> ${getTeamHtml(game.team_b)}
+                                </div>
+                            </td>
                             <td>
                                 ${hasScore
                             ? `<span style="font-size: 1.25rem; font-weight: 700;">${game.score_a} × ${game.score_b}</span>`
@@ -251,8 +256,8 @@ require_once __DIR__ . '/../config.php';
 
         function openScoreModal(id, teamA, teamB, scoreA, scoreB) {
             document.getElementById('scoreGameId').value = id;
-            document.getElementById('scoreTeamA').textContent = teamA;
-            document.getElementById('scoreTeamB').textContent = teamB;
+            document.getElementById('scoreTeamA').innerHTML = getTeamHtml(teamA);
+            document.getElementById('scoreTeamB').innerHTML = getTeamHtml(teamB);
             document.getElementById('scoreModalTitle').textContent = `${teamA} × ${teamB}`;
             document.getElementById('scoreA').value = scoreA !== null ? scoreA : '';
             document.getElementById('scoreB').value = scoreB !== null ? scoreB : '';
