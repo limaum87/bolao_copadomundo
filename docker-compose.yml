@@ -2,11 +2,9 @@ version: "3.9"
 
 services:
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: bolao-backend
     ports:
-      - "5000:5000"
+      - "5026:5000"
     environment:
       - FLASK_APP=backend.app
       - FLASK_ENV=development
@@ -17,13 +15,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
+    image: bolao-frontend
     ports:
       - "2626:80"
     environment:
       - API_BASE=http://backend:5000
+    volumes:
+      - ./frontend:/var/www/html
     depends_on:
       - backend
     restart: unless-stopped

@@ -8,108 +8,388 @@ if (!$uid) {
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
-    <title>Meus palpites</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; }
-        table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-        th, td { border: 1px solid #ddd; padding: 0.5rem; }
-        label { display: block; margin: 0.25rem 0; }
-        .finals { margin-top: 1rem; padding: 1rem; border: 1px solid #ccc; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meus Palpites - Bolão Copa 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/styles.css">
 </head>
+
 <body>
-<h1>Palpites do participante <?= htmlspecialchars($uid) ?></h1>
-<section>
-    <h3>Jogos</h3>
-    <table id="gamesTable">
-        <thead>
-        <tr><th>Início</th><th>Jogo</th><th>Meu palpite</th><th>Ações</th></tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-</section>
-<section class="finals">
-    <h3>Palpite Final</h3>
-    <form id="finalsForm">
-        <input type="hidden" name="participant_uid" value="<?= $uid ?>">
-        <label>Campeão <input type="text" name="champion" required></label>
-        <label>Vice <input type="text" name="runner_up" required></label>
-        <label>3º lugar <input type="text" name="third_place" required></label>
-        <label>4º lugar <input type="text" name="fourth_place" required></label>
-        <button type="submit">Salvar palpite final</button>
-    </form>
-</section>
-<script>
-    const apiBase = '<?= $apiBase ?>';
-    const uid = '<?= $uid ?>';
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div>
+                    <h1>Bolão Copa 2026</h1>
+                    <span class="header-subtitle">Seus palpites para a Copa do Mundo</span>
+                </div>
+                <div class="badge badge-info" style="background: rgba(255,255,255,0.2); color: white;">
+                    🎯 Participante: <?= htmlspecialchars($uid) ?>
+                </div>
+            </div>
+        </div>
+    </header>
 
-    async function loadData() {
-        const [gamesRes, predRes, finalsRes] = await Promise.all([
-            fetch(`${apiBase}/games`),
-            fetch(`${apiBase}/predictions?participant_uid=${uid}`),
-            fetch(`${apiBase}/finals_predictions?participant_uid=${uid}`)
-        ]);
-        const games = await gamesRes.json();
-        const preds = await predRes.json();
-        const finals = await finalsRes.json();
-        const myFinals = finals[0];
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <!-- Loading State -->
+            <div id="loadingState" class="loading-container">
+                <div class="spinner"></div>
+            </div>
 
-        const body = document.querySelector('#gamesTable tbody');
-        body.innerHTML = '';
-        games.forEach(game => {
-            const myPred = preds.find(p => p.game_id === game.id);
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${game.kickoff}</td>
-                <td>${game.team_a} x ${game.team_b}</td>
-                <td>${myPred ? `${myPred.goals_a} x ${myPred.goals_b}` : '-'}</td>
-                <td><button data-id="${game.id}" class="predict">Palpitar/editar</button></td>`;
-            body.appendChild(row);
-        });
+            <!-- Games Section -->
+            <section id="gamesSection" style="display: none;">
+                <div class="card-header" style="border: none; padding: 0;">
+                    <h2>⚽ Jogos da Copa</h2>
+                    <span id="gamesCount" class="badge badge-success"></span>
+                </div>
 
-        if (myFinals) {
-            ['champion','runner_up','third_place','fourth_place'].forEach(field => {
-                const input = document.querySelector(`#finalsForm [name=${field}]`);
-                if (input && myFinals[field]) input.value = myFinals[field];
+                <div id="gamesGrid" class="games-grid"></div>
+            </section>
+
+            <!-- Finals Section -->
+            <section class="finals-section" id="finalsSection" style="display: none;">
+                <h3 class="finals-title">Palpite Final - Classificação</h3>
+                <form id="finalsForm">
+                    <input type="hidden" name="participant_uid" value="<?= $uid ?>">
+                    <div class="finals-grid">
+                        <div class="final-input-group">
+                            <label class="final-input-label">🥇 Campeão</label>
+                            <input type="text" name="champion" class="final-input" placeholder="Ex: Brasil" required>
+                        </div>
+                        <div class="final-input-group">
+                            <label class="final-input-label">🥈 Vice-campeão</label>
+                            <input type="text" name="runner_up" class="final-input" placeholder="Ex: Argentina"
+                                required>
+                        </div>
+                        <div class="final-input-group">
+                            <label class="final-input-label">🥉 3º Lugar</label>
+                            <input type="text" name="third_place" class="final-input" placeholder="Ex: França" required>
+                        </div>
+                        <div class="final-input-group">
+                            <label class="final-input-label">4️⃣ 4º Lugar</label>
+                            <input type="text" name="fourth_place" class="final-input" placeholder="Ex: Alemanha"
+                                required>
+                        </div>
+                    </div>
+                    <div class="mt-lg text-center">
+                        <button type="submit" class="btn btn-secondary btn-lg">
+                            💾 Salvar Palpite Final
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Scoring Rules -->
+            <section class="card mt-xl">
+                <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
+                <div class="form-row">
+                    <div>
+                        <strong class="text-success">10 pontos</strong>
+                        <p class="text-muted">Placar exato</p>
+                    </div>
+                    <div>
+                        <strong class="text-warning">5 pontos</strong>
+                        <p class="text-muted">Vencedor + saldo de gols</p>
+                    </div>
+                    <div>
+                        <strong style="color: var(--color-blue);">2 pontos</strong>
+                        <p class="text-muted">Apenas vencedor correto</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Prediction Modal -->
+    <div id="predictionModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h4 class="modal-title" id="modalTitle">Fazer Palpite</h4>
+                <button type="button" class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="predictionForm">
+                    <input type="hidden" name="game_id" id="modalGameId">
+                    <input type="hidden" name="participant_uid" value="<?= $uid ?>">
+
+                    <div class="text-center mb-lg">
+                        <div class="game-teams">
+                            <div class="team">
+                                <div class="team-name" id="modalTeamA">Time A</div>
+                            </div>
+                            <div class="game-vs">×</div>
+                            <div class="team">
+                                <div class="team-name" id="modalTeamB">Time B</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="score-input-group">
+                        <input type="number" name="goals_a" id="modalGoalsA" class="score-input" min="0" max="99"
+                            placeholder="0" required>
+                        <span class="score-separator">×</span>
+                        <input type="number" name="goals_b" id="modalGoalsB" class="score-input" min="0" max="99"
+                            placeholder="0" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" id="cancelModal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="savePrediction">
+                    💾 Salvar Palpite
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Toast -->
+    <div id="alertToast" class="alert"
+        style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
+
+    <script>
+        const apiBase = '<?= $apiBase ?>';
+        const uid = '<?= $uid ?>';
+        let gamesData = [];
+        let predictionsData = [];
+
+        // Format date for display
+        function formatDate(isoString) {
+            const date = new Date(isoString);
+            const options = {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            return date.toLocaleDateString('pt-BR', options);
+        }
+
+        // Check if game is open for predictions
+        function isGameOpen(kickoff) {
+            return new Date(kickoff) > new Date();
+        }
+
+        // Show toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('alertToast');
+            toast.className = `alert alert-${type}`;
+            toast.innerHTML = message;
+            toast.style.display = 'flex';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+
+        // Render games
+        function renderGames() {
+            const grid = document.getElementById('gamesGrid');
+            grid.innerHTML = '';
+
+            gamesData.forEach(game => {
+                const myPred = predictionsData.find(p => p.game_id === game.id);
+                const isOpen = isGameOpen(game.kickoff);
+
+                const card = document.createElement('div');
+                card.className = 'game-card';
+                card.innerHTML = `
+                    <div class="game-card-header">
+                        <span>📅 ${formatDate(game.kickoff)}</span>
+                        <span class="badge ${isOpen ? 'badge-success' : 'badge-danger'}">
+                            <span class="status-dot ${isOpen ? 'open' : 'closed'}"></span>
+                            ${isOpen ? 'Aberto' : 'Encerrado'}
+                        </span>
+                    </div>
+                    <div class="game-card-body">
+                        <div class="game-teams">
+                            <div class="team">
+                                <div class="team-name">${game.team_a}</div>
+                            </div>
+                            <div class="game-vs">×</div>
+                            <div class="team">
+                                <div class="team-name">${game.team_b}</div>
+                            </div>
+                        </div>
+                        <div class="game-prediction">
+                            <div class="game-prediction-label">Seu palpite</div>
+                            ${myPred
+                        ? `<div class="game-prediction-score">${myPred.goals_a} × ${myPred.goals_b}</div>`
+                        : `<div class="game-prediction-empty">Nenhum palpite</div>`
+                    }
+                        </div>
+                    </div>
+                    <div class="game-card-footer">
+                        <button 
+                            class="btn ${isOpen ? 'btn-primary' : 'btn-outline'} btn-block predict-btn"
+                            data-game-id="${game.id}"
+                            data-team-a="${game.team_a}"
+                            data-team-b="${game.team_b}"
+                            data-goals-a="${myPred?.goals_a ?? ''}"
+                            data-goals-b="${myPred?.goals_b ?? ''}"
+                            ${!isOpen ? 'disabled' : ''}
+                        >
+                            ${isOpen
+                        ? (myPred ? '✏️ Editar palpite' : '🎯 Fazer palpite')
+                        : '🔒 Encerrado'
+                    }
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
             });
-        }
-    }
 
-    document.querySelector('#gamesTable').addEventListener('click', async (e) => {
-        if (!e.target.classList.contains('predict')) return;
-        const gameId = e.target.dataset.id;
-        const goalsA = prompt('Gols do time A:');
-        const goalsB = prompt('Gols do time B:');
-        const res = await fetch(`${apiBase}/predictions`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ participant_uid: uid, game_id: parseInt(gameId, 10), goals_a: parseInt(goalsA, 10), goals_b: parseInt(goalsB, 10) })
-        });
-        if (!res.ok) {
-            const msg = await res.json();
-            alert(msg.error || 'Erro ao salvar palpite');
+            // Update games count
+            const openGames = gamesData.filter(g => isGameOpen(g.kickoff)).length;
+            document.getElementById('gamesCount').textContent = `${openGames} jogos abertos`;
         }
+
+        // Load data
+        async function loadData() {
+            try {
+                const [gamesRes, predRes, finalsRes] = await Promise.all([
+                    fetch(`${apiBase}/games`),
+                    fetch(`${apiBase}/predictions?participant_uid=${uid}`),
+                    fetch(`${apiBase}/finals_predictions?participant_uid=${uid}`)
+                ]);
+
+                gamesData = await gamesRes.json();
+                predictionsData = await predRes.json();
+                const finals = await finalsRes.json();
+                const myFinals = finals[0];
+
+                // Hide loading, show content
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('gamesSection').style.display = 'block';
+                document.getElementById('finalsSection').style.display = 'block';
+
+                renderGames();
+
+                // Fill finals form
+                if (myFinals) {
+                    ['champion', 'runner_up', 'third_place', 'fourth_place'].forEach(field => {
+                        const input = document.querySelector(`#finalsForm [name=${field}]`);
+                        if (input && myFinals[field]) input.value = myFinals[field];
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showToast('Erro ao carregar dados', 'error');
+            }
+        }
+
+        // Modal handling
+        const modal = document.getElementById('predictionModal');
+
+        function openModal(gameId, teamA, teamB, goalsA, goalsB) {
+            document.getElementById('modalGameId').value = gameId;
+            document.getElementById('modalTeamA').textContent = teamA;
+            document.getElementById('modalTeamB').textContent = teamB;
+            document.getElementById('modalGoalsA').value = goalsA;
+            document.getElementById('modalGoalsB').value = goalsB;
+            document.getElementById('modalTitle').textContent = `${teamA} × ${teamB}`;
+            modal.classList.add('active');
+            document.getElementById('modalGoalsA').focus();
+        }
+
+        function closeModal() {
+            modal.classList.remove('active');
+        }
+
+        // Event listeners
+        document.getElementById('gamesGrid').addEventListener('click', (e) => {
+            const btn = e.target.closest('.predict-btn');
+            if (!btn || btn.disabled) return;
+
+            openModal(
+                btn.dataset.gameId,
+                btn.dataset.teamA,
+                btn.dataset.teamB,
+                btn.dataset.goalsA,
+                btn.dataset.goalsB
+            );
+        });
+
+        document.getElementById('closeModal').addEventListener('click', closeModal);
+        document.getElementById('cancelModal').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        document.getElementById('savePrediction').addEventListener('click', async () => {
+            const form = document.getElementById('predictionForm');
+            const formData = new FormData(form);
+            const data = {
+                participant_uid: uid,
+                game_id: parseInt(formData.get('game_id'), 10),
+                goals_a: parseInt(formData.get('goals_a'), 10),
+                goals_b: parseInt(formData.get('goals_b'), 10)
+            };
+
+            if (isNaN(data.goals_a) || isNaN(data.goals_b)) {
+                showToast('Por favor, preencha ambos os placares', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${apiBase}/predictions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    showToast('✅ Palpite salvo com sucesso!', 'success');
+                    closeModal();
+                    loadData();
+                } else {
+                    const msg = await res.json();
+                    showToast(msg.error || 'Erro ao salvar palpite', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        });
+
+        document.getElementById('finalsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+
+            try {
+                const res = await fetch(`${apiBase}/finals_predictions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    showToast('🏆 Palpite final salvo!', 'success');
+                } else {
+                    showToast('Erro ao salvar palpite final', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.classList.contains('active')) {
+                closeModal();
+            }
+            if (e.key === 'Enter' && modal.classList.contains('active')) {
+                document.getElementById('savePrediction').click();
+            }
+        });
+
+        // Initialize
         loadData();
-    });
-
-    document.querySelector('#finalsForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const data = Object.fromEntries(new FormData(e.target));
-        const res = await fetch(`${apiBase}/finals_predictions`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
-        });
-        if (res.ok) {
-            alert('Palpite final salvo');
-        } else {
-            alert('Erro ao salvar palpite final');
-        }
-    });
-
-    loadData();
-</script>
+    </script>
 </body>
+
 </html>
