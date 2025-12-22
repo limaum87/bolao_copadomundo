@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     ports:
-      - "8080:80"
+      - "2626:80"
     environment:
       - API_BASE=http://backend:5000
     depends_on:

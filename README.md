@@ -15,6 +15,22 @@ Base inicial para o sistema de bolão com backend em Flask, frontend PHP simples
   - `user/` – página de palpites via UID (`/frontend/user/{uid}` com .htaccess)
 - `jogos_copa_2026.txt` – referência de jogos para importação
 
+## Fluxo de Uso
+O sistema utiliza um modelo simplificado de acesso "sem senha", baseado em Links Únicos (UID).
+
+### 1. Administrador
+- Acessa o painel admin (`/frontend/admin/participantes.php`).
+- Cria um novo participante informando Nome e (opcionalmente) Email.
+- O sistema gera um **UID** (identificador único) para este participante.
+- O admin copia o **UID** ou o link direto e envia para o participante (via WhatsApp, Email, etc).
+
+### 2. Participante
+- Recebe o link único (ex: `http://seusite.com/frontend/user/{UID}`).
+- Acessa o link e vê apenas seus próprios palpites.
+- Não há login/senha, a segurança é baseada no segredo do link.
+- Pode preencher palpites até o horário de início de cada jogo.
+
+
 ## Configuração do backend
 1. Python 3.11+ recomendado.
 2. Crie o ambiente e instale dependências:
