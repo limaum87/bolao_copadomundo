@@ -1,3 +1,3 @@
 <?php
-$apiBase = getenv('API_BASE') ?: 'http://localhost:5000';
+$apiBase = getenv('API_BASE') ?: 'http://localhost:5026';
 ?>

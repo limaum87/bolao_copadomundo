@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, request, send_file
+from flask_cors import CORS
 from .database import engine, session_scope
 from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome
 from .scoring import calculate_scores, score_prediction
@@ -11,10 +12,17 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = (BASE_DIR / "data.db").resolve()
 
 app = Flask(__name__)
+CORS(app)
 
 
-@app.before_first_request
-def setup_database():
+# Initialize database on app startup
+def ensure_db_exists():
+    os.makedirs(DB_PATH.parent, exist_ok=True)
+    Base.metadata.create_all(engine)
+
+
+# Create tables at import time
+with app.app_context():
     ensure_db_exists()
 
 
@@ -306,10 +314,6 @@ def parse_date(value: str) -> datetime:
         return value
     return datetime.fromisoformat(value)
 
-
-def ensure_db_exists():
-    os.makedirs(DB_PATH.parent, exist_ok=True)
-    Base.metadata.create_all(engine)
 
 
 if __name__ == "__main__":

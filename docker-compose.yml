@@ -18,8 +18,7 @@ services:
     image: bolao-frontend
     ports:
       - "2626:80"
-    environment:
-      - API_BASE=http://backend:5000
+
     volumes:
       - ./frontend:/var/www/html
     depends_on:

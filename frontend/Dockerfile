@@ -7,7 +7,7 @@ RUN a2enmod rewrite \
 
 COPY frontend /var/www/html
 
-ENV API_BASE=http://backend:5000
+
 
 EXPOSE 80
 CMD ["apache2-foreground"]
