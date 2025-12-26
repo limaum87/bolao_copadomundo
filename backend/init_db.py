@@ -33,7 +33,7 @@ MONTHS = {
 }
 
 GAME_PATTERN = re.compile(
-    r"\*\s*(?P<time>\d{1,2})h\s*-\s*(?P<team_a>[^x]+)x\s*(?P<team_b>[^–-]+)",
+    r"\*\s*(?P<time>\d{1,2})h\s*-\s*(?P<team_a>.+?)\s+x\s+(?P<team_b>[^–-]+)",
     re.IGNORECASE,
 )
 

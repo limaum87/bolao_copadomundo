@@ -43,67 +43,107 @@ if (!$uid) {
                 <div class="spinner"></div>
             </div>
 
-            <!-- Games Section -->
-            <section id="gamesSection" style="display: none;">
-                <div class="card-header" style="border: none; padding: 0;">
-                    <h2>⚽ Jogos da Copa</h2>
-                    <span id="gamesCount" class="badge badge-success"></span>
-                </div>
-
-                <div id="gamesGrid" class="games-grid"></div>
-            </section>
-
-            <!-- Finals Section -->
-            <section class="finals-section" id="finalsSection" style="display: none;">
-                <h3 class="finals-title">Palpite Final - Classificação</h3>
-                <form id="finalsForm">
-                    <input type="hidden" name="participant_uid" value="<?= $uid ?>">
-                    <div class="finals-grid">
-                        <div class="final-input-group">
-                            <label class="final-input-label">🥇 Campeão</label>
-                            <input type="text" name="champion" class="final-input" placeholder="Ex: Brasil" required>
-                        </div>
-                        <div class="final-input-group">
-                            <label class="final-input-label">🥈 Vice-campeão</label>
-                            <input type="text" name="runner_up" class="final-input" placeholder="Ex: Argentina"
-                                required>
-                        </div>
-                        <div class="final-input-group">
-                            <label class="final-input-label">🥉 3º Lugar</label>
-                            <input type="text" name="third_place" class="final-input" placeholder="Ex: França" required>
-                        </div>
-                        <div class="final-input-group">
-                            <label class="final-input-label">4️⃣ 4º Lugar</label>
-                            <input type="text" name="fourth_place" class="final-input" placeholder="Ex: Alemanha"
-                                required>
-                        </div>
-                    </div>
-                    <div class="mt-lg text-center">
-                        <button type="submit" class="btn btn-secondary btn-lg">
-                            💾 Salvar Palpite Final
-                        </button>
-                    </div>
-                </form>
-            </section>
-
-            <!-- Scoring Rules -->
-            <section class="card mt-xl">
-                <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
+            <!-- Dashboard Section -->
+            <section id="dashboardSection" style="display: none;">
                 <div class="form-row">
-                    <div>
-                        <strong class="text-success">10 pontos</strong>
-                        <p class="text-muted">Placar exato</p>
+                    <div class="card text-center" style="cursor: pointer; transition: transform 0.2s;"
+                        onclick="showView('predictions')" onmouseover="this.style.transform='translateY(-5px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">⚽</div>
+                        <h3>Meus Palpites</h3>
+                        <p class="text-muted">Faça seus palpites para os jogos da Copa</p>
                     </div>
-                    <div>
-                        <strong class="text-warning">5 pontos</strong>
-                        <p class="text-muted">Vencedor + saldo de gols</p>
-                    </div>
-                    <div>
-                        <strong style="color: var(--color-blue);">2 pontos</strong>
-                        <p class="text-muted">Apenas vencedor correto</p>
+                    <div class="card text-center" style="cursor: pointer; transition: transform 0.2s;"
+                        onclick="showView('ranking')" onmouseover="this.style.transform='translateY(-5px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">🏆</div>
+                        <h3>Ranking</h3>
+                        <p class="text-muted">Veja sua posição na tabela de classificação</p>
                     </div>
                 </div>
             </section>
+
+            <!-- Predictions View -->
+            <div id="predictionsView" style="display: none;">
+                <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
+
+                <!-- Games Section -->
+                <section id="gamesSection">
+                    <div class="card-header" style="border: none; padding: 0;">
+                        <h2>⚽ Jogos da Copa</h2>
+                        <span id="gamesCount" class="badge badge-success"></span>
+                    </div>
+
+                    <div id="gamesGrid" class="games-grid"></div>
+                </section>
+
+                <!-- Finals Section -->
+                <section class="finals-section" id="finalsSection">
+                    <h3 class="finals-title">Palpite Final - Classificação</h3>
+                    <form id="finalsForm">
+                        <input type="hidden" name="participant_uid" value="<?= $uid ?>">
+                        <div class="finals-grid">
+                            <div class="final-input-group">
+                                <label class="final-input-label">🥇 Campeão</label>
+                                <input type="text" name="champion" class="final-input" placeholder="Ex: Brasil"
+                                    required>
+                            </div>
+                            <div class="final-input-group">
+                                <label class="final-input-label">🥈 Vice-campeão</label>
+                                <input type="text" name="runner_up" class="final-input" placeholder="Ex: Argentina"
+                                    required>
+                            </div>
+                            <div class="final-input-group">
+                                <label class="final-input-label">🥉 3º Lugar</label>
+                                <input type="text" name="third_place" class="final-input" placeholder="Ex: França"
+                                    required>
+                            </div>
+                            <div class="final-input-group">
+                                <label class="final-input-label">4️⃣ 4º Lugar</label>
+                                <input type="text" name="fourth_place" class="final-input" placeholder="Ex: Alemanha"
+                                    required>
+                            </div>
+                        </div>
+                        <div class="mt-lg text-center">
+                            <button type="submit" class="btn btn-secondary btn-lg">
+                                💾 Salvar Palpite Final
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- Scoring Rules -->
+                <section class="card mt-xl">
+                    <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
+                    <div class="form-row">
+                        <div>
+                            <strong class="text-success">10 pontos</strong>
+                            <p class="text-muted">Placar exato</p>
+                        </div>
+                        <div>
+                            <strong class="text-warning">5 pontos</strong>
+                            <p class="text-muted">Vencedor + saldo de gols</p>
+                        </div>
+                        <div>
+                            <strong style="color: var(--color-blue);">2 pontos</strong>
+                            <p class="text-muted">Apenas vencedor correto</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Ranking View -->
+            <div id="rankingView" style="display: none;">
+                <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
+                <div class="card">
+                    <h3 class="card-title mb-lg">🏆 Ranking Geral</h3>
+                    <div id="rankingContainer">
+                        <div class="loading-container">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -264,10 +304,9 @@ if (!$uid) {
                 const finals = await finalsRes.json();
                 const myFinals = finals[0];
 
-                // Hide loading, show content
+                // Hide loading, show dashboard
                 document.getElementById('loadingState').style.display = 'none';
-                document.getElementById('gamesSection').style.display = 'block';
-                document.getElementById('finalsSection').style.display = 'block';
+                document.getElementById('dashboardSection').style.display = 'block';
 
                 renderGames();
 
@@ -387,6 +426,57 @@ if (!$uid) {
                 document.getElementById('savePrediction').click();
             }
         });
+
+        // Navigation
+        function showView(viewName) {
+            // Hide all views
+            document.getElementById('dashboardSection').style.display = 'none';
+            document.getElementById('predictionsView').style.display = 'none';
+            document.getElementById('rankingView').style.display = 'none';
+
+            // Show selected view
+            if (viewName === 'dashboard') {
+                document.getElementById('dashboardSection').style.display = 'block';
+            } else if (viewName === 'predictions') {
+                document.getElementById('predictionsView').style.display = 'block';
+            } else if (viewName === 'ranking') {
+                document.getElementById('rankingView').style.display = 'block';
+                loadRanking();
+            }
+        }
+
+        // Load Ranking
+        async function loadRanking() {
+            try {
+                const res = await fetch(`${apiBase}/scores`);
+                const scores = await res.json();
+
+                const rankingHtml = scores.length > 0
+                    ? `<table class="table">
+                        <thead>
+                            <tr><th>#</th><th>Participante</th><th>Pontos</th></tr>
+                        </thead>
+                        <tbody>
+                            ${scores.map((s, i) => `
+                                <tr class="${s.uid === uid ? 'highlight-row' : ''}" style="${s.uid === uid ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
+                                    <td>${i + 1}</td>
+                                    <td>
+                                        ${s.name}
+                                        ${s.uid === uid ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
+                                    </td>
+                                    <td><strong>${s.total_points || 0}</strong></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>`
+                    : '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">Nenhum ranking disponível ainda</div></div>';
+
+                document.getElementById('rankingContainer').innerHTML = rankingHtml;
+            } catch (error) {
+                console.error('Error loading ranking:', error);
+                document.getElementById('rankingContainer').innerHTML = '<div class="alert alert-error">Erro ao carregar ranking</div>';
+            }
+        }
 
         // Initialize
         loadData();
