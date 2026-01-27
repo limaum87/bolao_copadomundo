@@ -188,6 +188,26 @@ if (!$uid) {
             </div>
         </div>
     </div>
+    <!-- Score Breakdown Modal -->
+    <div id="scoreBreakdownModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h4 class="modal-title" id="breakdownTitle">Detalhamento de Pontos</h4>
+                <button type="button" class="modal-close" onclick="closeBreakdownModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="breakdownLoading" class="text-center py-lg">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                </div>
+                <div id="breakdownContent" style="display: none;">
+                    <ul id="breakdownList" class="breakdown-list"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeBreakdownModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Alert Toast -->
     <div id="alertToast" class="alert"
@@ -464,7 +484,11 @@ if (!$uid) {
                                         ${s.name}
                                         ${s.uid === uid ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
                                     </td>
-                                    <td><strong>${s.total_points || 0}</strong></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline" style="min-width: 60px; font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
+                                            ${s.total_points || 0}
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -477,6 +501,48 @@ if (!$uid) {
                 document.getElementById('rankingContainer').innerHTML = '<div class="alert alert-error">Erro ao carregar ranking</div>';
             }
         }
+
+        // Score Breakdown
+        const breakdownModal = document.getElementById('scoreBreakdownModal');
+        
+        async function openBreakdownModal(participantId, name) {
+            document.getElementById('breakdownTitle').textContent = `Palpites de ${name}`;
+            document.getElementById('breakdownLoading').style.display = 'block';
+            document.getElementById('breakdownContent').style.display = 'none';
+            document.getElementById('breakdownList').innerHTML = '';
+            
+            breakdownModal.classList.add('active');
+
+            try {
+                const res = await fetch(`${apiBase}/scores/${participantId}/details`);
+                const data = await res.json();
+                
+                document.getElementById('breakdownLoading').style.display = 'none';
+                document.getElementById('breakdownContent').style.display = 'block';
+                
+                if (data.breakdown.length === 0) {
+                    document.getElementById('breakdownList').innerHTML = '<li class="text-center py-lg text-muted">Ainda não marcou pontos</li>';
+                } else {
+                    document.getElementById('breakdownList').innerHTML = data.breakdown.map(item => `
+                        <li class="breakdown-item">
+                            <div class="breakdown-desc">${item.description}</div>
+                            <div class="breakdown-pts pts-${item.points}">${item.points} pts</div>
+                        </li>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('breakdownLoading').innerHTML = '<div class="text-error">Erro ao carregar detalhes</div>';
+            }
+        }
+
+        function closeBreakdownModal() {
+            breakdownModal.classList.remove('active');
+        }
+
+        breakdownModal.addEventListener('click', (e) => {
+            if (e.target === breakdownModal) closeBreakdownModal();
+        });
 
         // Initialize
         loadData();

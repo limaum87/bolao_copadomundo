@@ -439,6 +439,36 @@ def scores():
         return jsonify(results)
 
 
+@app.route("/scores/<int:participant_id>/details", methods=["GET"])
+def score_details(participant_id: int):
+    with session_scope() as session:
+        participant = session.query(Participant).get(participant_id)
+        if not participant:
+            return {"error": "Participant not found"}, 404
+
+        games = session.query(Game).all()
+        predictions = session.query(Prediction).filter_by(participant_id=participant_id).all()
+        finals_prediction = session.query(FinalsPrediction).filter_by(participant_id=participant_id).first()
+        outcome = session.query(TournamentOutcome).get(1)
+
+        from .scoring import get_score_breakdown
+        breakdown = get_score_breakdown(
+            participant=participant,
+            games=games,
+            predictions=predictions,
+            finals_prediction=finals_prediction,
+            outcome=outcome,
+        )
+
+        return jsonify({
+            "participant": {
+                "name": participant.name,
+                "total_points": sum(item["points"] for item in breakdown)
+            },
+            "breakdown": breakdown
+        })
+
+
 @app.route("/score_preview", methods=["POST"])
 def score_preview():
     data = request.get_json()

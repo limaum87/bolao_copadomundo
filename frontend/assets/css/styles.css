@@ -1051,3 +1051,60 @@ a:hover {
     display: inline-flex;
     flex-direction: row;
 }
+
+/* Breakdown List */
+.breakdown-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.breakdown-item {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--color-gray-100);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-md);
+    transition: background var(--transition-fast);
+}
+
+.breakdown-item:hover {
+    background: var(--color-gray-50);
+}
+
+.breakdown-item:last-child {
+    border-bottom: none;
+}
+
+.breakdown-desc {
+    flex: 1;
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-700);
+}
+
+.breakdown-pts {
+    font-weight: 700;
+    color: var(--color-success);
+    white-space: nowrap;
+    background: rgba(72, 187, 120, 0.1);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+    min-width: 60px;
+    text-align: center;
+}
+
+.breakdown-pts.pts-10 {
+    background: rgba(72, 187, 120, 0.2);
+    color: var(--color-green-dark);
+}
+
+.breakdown-pts.pts-5 {
+    background: rgba(237, 137, 54, 0.1);
+    color: var(--color-warning);
+}
+
+.breakdown-pts.pts-2 {
+    background: rgba(0, 39, 118, 0.1);
+    color: var(--color-blue);
+}

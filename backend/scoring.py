@@ -84,3 +84,58 @@ def calculate_scores(
 
     results.sort(key=lambda item: item["total_points"], reverse=True)
     return results
+
+
+def get_score_breakdown(
+    participant: Participant,
+    games: List[Game],
+    predictions: List[Prediction],
+    finals_prediction: FinalsPrediction,
+    outcome: TournamentOutcome,
+) -> List[Dict]:
+    breakdown = []
+    game_lookup = {game.id: game for game in games}
+
+    # Points from games
+    for pred in predictions:
+        game = game_lookup.get(pred.game_id)
+        if not game or game.score_a is None or game.score_b is None:
+            continue
+
+        pts = score_prediction(pred, game)
+        if pts > 0:
+            text = ""
+            if pts == 10:
+                text = f"Acertou em cheio o placar {game.team_a} × {game.team_b}!"
+            elif pts == 5:
+                text = f"Acertou o vencedor e o saldo de {game.team_a} × {game.team_b}!"
+            elif pts == 2:
+                text = f"Acertou o vencedor de {game.team_a} × {game.team_b}!"
+
+            breakdown.append({
+                "type": "game",
+                "label": f"{game.team_a} × {game.team_b}",
+                "points": pts,
+                "description": text
+            })
+
+    # Points from finals
+    if finals_prediction and outcome:
+        mapping = {
+            "champion": ("Campeão", 50),
+            "runner_up": ("Vice-campeão", 15),
+            "third_place": ("3º Lugar", 10),
+            "fourth_place": ("4º Lugar", 10),
+        }
+        for field, (label, pts) in mapping.items():
+            pred_team = getattr(finals_prediction, field)
+            real_team = getattr(outcome, field)
+            if pred_team and real_team and pred_team.lower() == real_team.lower():
+                breakdown.append({
+                    "type": "finals",
+                    "label": label,
+                    "points": pts,
+                    "description": f"Acertou o {label} ({real_team})!"
+                })
+
+    return breakdown
