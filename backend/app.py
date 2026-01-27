@@ -305,14 +305,29 @@ def predictions():
     with session_scope() as session:
         if request.method == "GET":
             participant_uid = request.args.get("participant_uid")
+            game_id = request.args.get("game_id")
+            
             query = session.query(Prediction)
+            
             if participant_uid:
                 participant = session.query(Participant).filter_by(uid=participant_uid).first()
                 if not participant:
                     return {"error": "Participant not found"}, 404
                 query = query.filter(Prediction.participant_id == participant.id)
+            
+            if game_id:
+                query = query.filter(Prediction.game_id == game_id)
+                
             rows = query.all()
-            return jsonify([serialize_prediction(row) for row in rows])
+            
+            results = []
+            for row in rows:
+                data = serialize_prediction(row)
+                # Inclui o nome do participante para facilitar exibição no admin
+                data["participant_name"] = row.participant.name if row.participant else "Desconhecido"
+                results.append(data)
+                
+            return jsonify(results)
 
         data = request.get_json()
         participant_uid = data.get("participant_uid")

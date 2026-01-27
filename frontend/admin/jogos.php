@@ -135,6 +135,32 @@ require_once __DIR__ . '/../config.php';
         </div>
     </div>
 
+    <!-- Game Predictions Modal -->
+    <div id="gamePredictionsModal" class="modal-overlay">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h4 class="modal-title" id="gamePredictionsModalTitle">Palpites do Jogo</h4>
+                <button type="button" class="modal-close" onclick="closeGamePredictionsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="gamePredictionsList" class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Participante</th>
+                                <th>Palpite</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gamePredictionsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeGamePredictionsModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Alert Toast -->
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
@@ -205,6 +231,9 @@ require_once __DIR__ . '/../config.php';
                             </td>
                             <td>
                                 <div class="flex gap-sm">
+                                    <button class="btn btn-sm btn-outline" onclick="openGamePredictionsModal(${game.id}, '${game.team_a}', '${game.team_b}')" title="Ver palpites deste jogo">
+                                        👁️ Palpites
+                                    </button>
                                     <button class="btn btn-sm btn-primary" onclick="openScoreModal(${game.id}, '${game.team_a}', '${game.team_b}', ${game.score_a ?? 'null'}, ${game.score_b ?? 'null'})">
                                         📝 Placar
                                     </button>
@@ -386,8 +415,52 @@ require_once __DIR__ . '/../config.php';
         scoreModal.addEventListener('click', (e) => {
             if (e.target === scoreModal) closeScoreModal();
         });
+
+        // Game Predictions Modal Logic
+        const gamePredictionsModal = document.getElementById('gamePredictionsModal');
+
+        async function openGamePredictionsModal(gameId, teamA, teamB) {
+            document.getElementById('gamePredictionsModalTitle').textContent = `Palpites: ${teamA} × ${teamB}`;
+            const tbody = document.getElementById('gamePredictionsTableBody');
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center">Carregando...</td></tr>';
+
+            gamePredictionsModal.classList.add('active');
+
+            try {
+                const res = await fetch(`${apiBase}/predictions?game_id=${gameId}`);
+                const predictions = await res.json();
+
+                if (predictions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum palpite para este jogo</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = predictions.map(p => `
+                    <tr>
+                        <td><strong>${p.participant_name}</strong></td>
+                        <td><span style="font-size: 1.1rem;">${p.goals_a} × ${p.goals_b}</span></td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error(error);
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-error">Erro ao carregar palpites</td></tr>';
+            }
+        }
+
+        function closeGamePredictionsModal() {
+            gamePredictionsModal.classList.remove('active');
+        }
+
+        gamePredictionsModal.addEventListener('click', (e) => {
+            if (e.target === gamePredictionsModal) closeGamePredictionsModal();
+        });
+
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeScoreModal();
+            if (e.key === 'Escape') {
+                closeScoreModal();
+                closeGamePredictionsModal();
+            }
         });
 
         loadGames();
