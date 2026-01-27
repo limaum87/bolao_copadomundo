@@ -143,7 +143,8 @@ require_once __DIR__ . '/../config.php';
                 <button type="button" class="modal-close" onclick="closeGamePredictionsModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div id="gamePredictionsList" class="table-container">
+                <h5 class="mb-sm">✅ Palpites Realizados</h5>
+                <div id="gamePredictionsList" class="table-container mb-lg">
                     <table class="table">
                         <thead>
                             <tr>
@@ -152,6 +153,19 @@ require_once __DIR__ . '/../config.php';
                             </tr>
                         </thead>
                         <tbody id="gamePredictionsTableBody"></tbody>
+                    </table>
+                </div>
+
+                <h5 class="mb-sm text-error">⚠️ Faltam palpitar</h5>
+                <div id="missingPredictionsList" class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Participante</th>
+                                <th>Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="missingPredictionsTableBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -422,29 +436,57 @@ require_once __DIR__ . '/../config.php';
         async function openGamePredictionsModal(gameId, teamA, teamB) {
             document.getElementById('gamePredictionsModalTitle').textContent = `Palpites: ${teamA} × ${teamB}`;
             const tbody = document.getElementById('gamePredictionsTableBody');
+            const missingTbody = document.getElementById('missingPredictionsTableBody');
+
             tbody.innerHTML = '<tr><td colspan="2" class="text-center">Carregando...</td></tr>';
+            missingTbody.innerHTML = '<tr><td colspan="2" class="text-center">Carregando...</td></tr>';
 
             gamePredictionsModal.classList.add('active');
 
             try {
-                const res = await fetch(`${apiBase}/predictions?game_id=${gameId}`);
-                const predictions = await res.json();
+                const [predRes, partRes] = await Promise.all([
+                    fetch(`${apiBase}/predictions?game_id=${gameId}`),
+                    fetch(`${apiBase}/participants`)
+                ]);
 
+                const predictions = await predRes.json();
+                const allParticipants = await partRes.json();
+
+                // Palpites realizados
                 if (predictions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum palpite para este jogo</td></tr>';
-                    return;
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Nenhum palpite ainda</td></tr>';
+                } else {
+                    tbody.innerHTML = predictions.map(p => `
+                        <tr>
+                            <td><strong>${p.participant_name}</strong></td>
+                            <td><span style="font-size: 1.1rem;">${p.goals_a} × ${p.goals_b}</span></td>
+                        </tr>
+                    `).join('');
                 }
 
-                tbody.innerHTML = predictions.map(p => `
-                    <tr>
-                        <td><strong>${p.participant_name}</strong></td>
-                        <td><span style="font-size: 1.1rem;">${p.goals_a} × ${p.goals_b}</span></td>
-                    </tr>
-                `).join('');
+                // Participantes faltando
+                const predictedIds = new Set(predictions.map(p => p.participant_id));
+                const missing = allParticipants.filter(p => !predictedIds.has(p.id));
+
+                if (missing.length === 0) {
+                    missingTbody.innerHTML = '<tr><td colspan="2" class="text-center text-success">Todos já palpitaram! 🎉</td></tr>';
+                } else {
+                    missingTbody.innerHTML = missing.map(p => `
+                        <tr>
+                            <td>${p.name}</td>
+                            <td>
+                                <a href="https://wa.me/?text=${encodeURIComponent('Oi ' + p.name + '! Vi que você ainda não palpitou no jogo ' + teamA + ' × ' + teamB + '. Não esquece! ⚽🏆')}" 
+                                   target="_blank" class="btn btn-sm btn-outline" style="padding: 2px 8px; font-size: 0.75rem;">
+                                   📢 Avisar
+                                </a>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
 
             } catch (error) {
                 console.error(error);
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-error">Erro ao carregar palpites</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-error">Erro ao carregar dados</td></tr>';
             }
         }
 
