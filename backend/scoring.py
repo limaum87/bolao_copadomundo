@@ -106,11 +106,11 @@ def get_score_breakdown(
         if pts > 0:
             text = ""
             if pts == 10:
-                text = f"Acertou em cheio o placar {game.team_a} × {game.team_b}!"
+                text = f"Acertou em cheio o placar {game.team_a} {game.score_a} × {game.score_b} {game.team_b}!"
             elif pts == 5:
-                text = f"Acertou o vencedor e o saldo de {game.team_a} × {game.team_b}!"
+                text = f"Acertou o resultado (vencedor/empate) de {game.team_a} × {game.team_b}!"
             elif pts == 2:
-                text = f"Acertou o vencedor de {game.team_a} × {game.team_b}!"
+                text = f"Acertou a quantidade de gols de um dos times em {game.team_a} × {game.team_b}!"
 
             breakdown.append({
                 "type": "game",
