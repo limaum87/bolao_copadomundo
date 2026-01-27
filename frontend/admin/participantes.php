@@ -76,6 +76,7 @@ require_once __DIR__ . '/../config.php';
                                 <th>ID</th>
                                 <th>Nome</th>
                                 <th>Email</th>
+                                <th>Progresso</th>
                                 <th>Link de Acesso</th>
                                 <th>Ações</th>
                             </tr>
@@ -118,6 +119,7 @@ require_once __DIR__ . '/../config.php';
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
 
+    <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const frontendBase = window.location.origin + '/user/';
@@ -142,11 +144,11 @@ require_once __DIR__ . '/../config.php';
                     fetch(`${apiBase}/games`),
                     fetch(`${apiBase}/scores`)
                 ]);
-                
+
                 const participants = await pRes.json();
                 const games = await gRes.json();
                 const scores = await sRes.json();
-                
+
                 const totalGames = games.length;
 
                 document.getElementById('participantsCount').textContent = `${participants.length} participantes`;
@@ -157,7 +159,7 @@ require_once __DIR__ . '/../config.php';
                     const score = scores.find(s => s.id === p.id);
                     const predicted = score ? score.games_predicted : 0;
                     const progressClass = predicted === totalGames ? 'badge-success' : 'badge-warning';
-                    
+
                     return `
                         <tr>
                             <td>${p.id}</td>
@@ -205,7 +207,7 @@ require_once __DIR__ . '/../config.php';
             document.getElementById('predictionsModalTitle').textContent = `Palpites de ${name}`;
             const tbody = document.getElementById('predictionsTableBody');
             tbody.innerHTML = '<tr><td colspan="3" class="text-center">Carregando...</td></tr>';
-            
+
             predictionsModal.classList.add('active');
 
             try {
@@ -213,33 +215,33 @@ require_once __DIR__ . '/../config.php';
                     fetch(`${apiBase}/games`),
                     fetch(`${apiBase}/predictions?participant_uid=${uid}`)
                 ]);
-                
+
                 const games = await gRes.json();
                 const predictions = await pRes.json();
-                
+
                 tbody.innerHTML = games.map(game => {
                     const pred = predictions.find(p => p.game_id === game.id);
                     const hasResult = game.score_a !== null && game.score_b !== null;
-                    
+
                     return `
                         <tr>
                             <td style="font-size: 0.875rem;">
                                 ${getTeamHtml(game.team_a)} × ${getTeamHtml(game.team_b)}
                             </td>
                             <td>
-                                ${pred 
-                                    ? `<strong>${pred.goals_a} × ${pred.goals_b}</strong>` 
-                                    : '<span class="text-muted italic">Sem palpite</span>'}
+                                ${pred
+                            ? `<strong>${pred.goals_a} × ${pred.goals_b}</strong>`
+                            : '<span class="text-muted italic">Sem palpite</span>'}
                             </td>
                             <td>
-                                ${hasResult 
-                                    ? `<span class="badge badge-info">${game.score_a} × ${game.score_b}</span>` 
-                                    : '<span class="text-muted">-</span>'}
+                                ${hasResult
+                            ? `<span class="badge badge-info">${game.score_a} × ${game.score_b}</span>`
+                            : '<span class="text-muted">-</span>'}
                             </td>
                         </tr>
                     `;
                 }).join('');
-                
+
             } catch (error) {
                 console.error(error);
                 tbody.innerHTML = '<tr><td colspan="3" class="text-center text-error">Erro ao carregar palpites</td></tr>';
