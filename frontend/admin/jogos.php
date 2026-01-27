@@ -65,7 +65,17 @@ require_once __DIR__ . '/../config.php';
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">⚽ Lista de Jogos</h3>
-                    <span id="gamesCount" class="badge badge-info"></span>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span id="gamesCount" class="badge badge-info"></span>
+                        <input type="file" id="importFile" accept=".json" style="display: none;">
+                        <button class="btn btn-sm btn-secondary"
+                            onclick="document.getElementById('importFile').click()">
+                            📥 Importar JSON
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteAllGames()">
+                            🗑️ Apagar Todos
+                        </button>
+                    </div>
                 </div>
                 <div class="table-container">
                     <table class="table" id="gamesTable">
@@ -132,6 +142,11 @@ require_once __DIR__ . '/../config.php';
     <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
+        const token = localStorage.getItem('admin_token');
+
+        if (!token) {
+            window.location.href = '/admin/login.php';
+        }
 
         function showToast(message, type = 'success') {
             const toast = document.getElementById('alertToast');
@@ -222,7 +237,10 @@ require_once __DIR__ . '/../config.php';
             try {
                 const res = await fetch(`${apiBase}/games`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify(data)
                 });
 
@@ -243,13 +261,76 @@ require_once __DIR__ . '/../config.php';
             if (!confirm('Tem certeza que deseja apagar este jogo?')) return;
 
             try {
-                await fetch(`${apiBase}/games/${id}`, { method: 'DELETE' });
+                await fetch(`${apiBase}/games/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 showToast('🗑️ Jogo removido', 'success');
                 loadGames();
             } catch (error) {
                 showToast('Erro ao remover jogo', 'error');
             }
         }
+
+        // Delete all games
+        async function deleteAllGames() {
+            if (!confirm('⚠️ Tem certeza que deseja apagar TODOS os jogos?\n\nIsso também apagará todos os palpites!')) return;
+            if (!confirm('⚠️ Esta ação é IRREVERSÍVEL!\n\nClique OK para confirmar.')) return;
+
+            try {
+                const res = await fetch(`${apiBase}/games/all`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`🗑️ ${data.deleted} jogos removidos!`, 'success');
+                    loadGames();
+                } else {
+                    showToast('Erro ao remover jogos', 'error');
+                }
+            } catch (error) {
+                showToast('Erro ao remover jogos', 'error');
+            }
+        }
+
+        // Import games from JSON
+        document.getElementById('importFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const games = JSON.parse(text);
+
+                if (!Array.isArray(games)) {
+                    showToast('O arquivo deve conter um array de jogos', 'error');
+                    return;
+                }
+
+                const res = await fetch(`${apiBase}/games/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: text
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`✅ ${data.imported} jogos importados!`, 'success');
+                    loadGames();
+                } else {
+                    showToast('Erro ao importar jogos', 'error');
+                }
+            } catch (error) {
+                showToast('Erro ao ler arquivo JSON', 'error');
+            }
+
+            // Reset input para permitir reimportar o mesmo arquivo
+            e.target.value = '';
+        });
 
         // Score modal
         const scoreModal = document.getElementById('scoreModal');
@@ -282,7 +363,10 @@ require_once __DIR__ . '/../config.php';
             try {
                 const res = await fetch(`${apiBase}/games/${id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({ score_a: scoreA, score_b: scoreB })
                 });
 

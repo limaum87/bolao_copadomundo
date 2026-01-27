@@ -23,7 +23,11 @@ require_once __DIR__ . '/../config.php';
                     <h1>Admin - Bolão Copa 2026</h1>
                     <span class="header-subtitle">Painel de Controle</span>
                 </div>
-                <a href="/" class="btn btn-secondary btn-sm">← Voltar ao Início</a>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="openChangePasswordModal()" class="btn btn-outline btn-sm">🔑 Alterar Senha</button>
+                    <button onclick="logout()" class="btn btn-outline btn-sm">🚪 Sair</button>
+                    <a href="/" class="btn btn-secondary btn-sm">← Voltar ao Início</a>
+                </div>
             </div>
         </div>
     </header>
@@ -111,8 +115,38 @@ require_once __DIR__ . '/../config.php';
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
 
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Alterar Senha</h2>
+                <button class="close-modal" onclick="closeChangePasswordModal()">&times;</button>
+            </div>
+            <form id="changePasswordForm">
+                <div class="form-group">
+                    <label class="form-label">Nova Senha</label>
+                    <input type="password" name="new_password" class="form-input" required minlength="4">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeChangePasswordModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const apiBase = '<?= $apiBase ?>';
+        const token = localStorage.getItem('admin_token');
+
+        if (!token) {
+            window.location.href = '/admin/login.php';
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            window.location.href = '/admin/login.php';
+        }
 
         function showToast(message, type = 'success') {
             const toast = document.getElementById('alertToast');
@@ -177,6 +211,9 @@ require_once __DIR__ . '/../config.php';
             try {
                 const res = await fetch(`${apiBase}/backup/import`, {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: formData
                 });
 
@@ -192,6 +229,73 @@ require_once __DIR__ . '/../config.php';
         });
 
         loadStats();
+
+        // Change Password Logic
+        const changePasswordModal = document.getElementById('changePasswordModal');
+
+        function openChangePasswordModal() {
+            changePasswordModal.style.display = 'flex';
+        }
+
+        function closeChangePasswordModal() {
+            changePasswordModal.style.display = 'none';
+            document.getElementById('changePasswordForm').reset();
+        }
+
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const res = await fetch(`${apiBase}/change-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    showToast('Senha alterada com sucesso!', 'success');
+                    closeChangePasswordModal();
+                } else {
+                    showToast('Erro ao alterar senha', 'error');
+                }
+            } catch (error) {
+                console.error(error);
+                showToast('Erro de conexão', 'error');
+            }
+        });
+
+        // Update export link with token (needs to be handled differently since it's a link)
+        // Actually, for download links, we can't easily add headers. 
+        // We might need to use fetch and blob, or pass token in query param (less secure but easier).
+        // Let's stick to fetch and blob for security.
+        document.querySelector('a[href*="/backup/export"]').addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                const res = await fetch(`${apiBase}/backup/export`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "bolao_backup.sqlite";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } else {
+                    showToast('Erro ao exportar backup', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        });
     </script>
 </body>
 

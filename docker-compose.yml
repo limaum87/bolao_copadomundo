@@ -3,6 +3,9 @@ version: "3.9"
 services:
   backend:
     image: bolao-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "5026:5000"
     environment:
@@ -11,7 +14,7 @@ services:
       - DATABASE_URL=sqlite:////app/backend/data.db
     volumes:
       - ./backend:/app/backend
-      - ./jogos_copa_2026.txt:/app/jogos_copa_2026.txt:ro
+      - ./jogos_copa_2026.json:/app/jogos_copa_2026.json:ro
     restart: unless-stopped
 
   frontend:

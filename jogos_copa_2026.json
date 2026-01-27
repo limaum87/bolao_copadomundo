@@ -1,0 +1,362 @@
+[
+    {
+        "kickoff": "2026-06-11T16:00:00",
+        "team_a": "México",
+        "team_b": "África do Sul"
+    },
+    {
+        "kickoff": "2026-06-11T23:00:00",
+        "team_a": "Coreia do Sul",
+        "team_b": "Europa D"
+    },
+    {
+        "kickoff": "2026-06-12T16:00:00",
+        "team_a": "Canadá",
+        "team_b": "Europa A"
+    },
+    {
+        "kickoff": "2026-06-12T22:00:00",
+        "team_a": "Estados Unidos",
+        "team_b": "Paraguai"
+    },
+    {
+        "kickoff": "2026-06-13T01:00:00",
+        "team_a": "Austrália",
+        "team_b": "Europa C"
+    },
+    {
+        "kickoff": "2026-06-13T16:00:00",
+        "team_a": "Qatar",
+        "team_b": "Suíça"
+    },
+    {
+        "kickoff": "2026-06-13T19:00:00",
+        "team_a": "Brasil",
+        "team_b": "Marrocos"
+    },
+    {
+        "kickoff": "2026-06-13T22:00:00",
+        "team_a": "Haiti",
+        "team_b": "Escócia"
+    },
+    {
+        "kickoff": "2026-06-14T14:00:00",
+        "team_a": "Alemanha",
+        "team_b": "Curaçao"
+    },
+    {
+        "kickoff": "2026-06-14T17:00:00",
+        "team_a": "Holanda",
+        "team_b": "Japão"
+    },
+    {
+        "kickoff": "2026-06-14T20:00:00",
+        "team_a": "Costa do Marfim",
+        "team_b": "Equador"
+    },
+    {
+        "kickoff": "2026-06-14T23:00:00",
+        "team_a": "Europa B",
+        "team_b": "Tunísia"
+    },
+    {
+        "kickoff": "2026-06-15T13:00:00",
+        "team_a": "Espanha",
+        "team_b": "Cabo Verde"
+    },
+    {
+        "kickoff": "2026-06-15T16:00:00",
+        "team_a": "Bélgica",
+        "team_b": "Egito"
+    },
+    {
+        "kickoff": "2026-06-15T19:00:00",
+        "team_a": "Arábia Saudita",
+        "team_b": "Uruguai"
+    },
+    {
+        "kickoff": "2026-06-15T22:00:00",
+        "team_a": "Irã",
+        "team_b": "Nova Zelândia"
+    },
+    {
+        "kickoff": "2026-06-16T16:00:00",
+        "team_a": "França",
+        "team_b": "Senegal"
+    },
+    {
+        "kickoff": "2026-06-16T19:00:00",
+        "team_a": "Intercontinental 2",
+        "team_b": "Noruega"
+    },
+    {
+        "kickoff": "2026-06-16T22:00:00",
+        "team_a": "Argentina",
+        "team_b": "Argélia"
+    },
+    {
+        "kickoff": "2026-06-17T01:00:00",
+        "team_a": "Áustria",
+        "team_b": "Jordânia"
+    },
+    {
+        "kickoff": "2026-06-17T14:00:00",
+        "team_a": "Portugal",
+        "team_b": "Intercontinental 1"
+    },
+    {
+        "kickoff": "2026-06-17T17:00:00",
+        "team_a": "Inglaterra",
+        "team_b": "Croácia"
+    },
+    {
+        "kickoff": "2026-06-17T20:00:00",
+        "team_a": "Gana",
+        "team_b": "Panamá"
+    },
+    {
+        "kickoff": "2026-06-17T23:00:00",
+        "team_a": "Uzbequistão",
+        "team_b": "Colômbia"
+    },
+    {
+        "kickoff": "2026-06-18T13:00:00",
+        "team_a": "Europa D",
+        "team_b": "África do Sul"
+    },
+    {
+        "kickoff": "2026-06-18T16:00:00",
+        "team_a": "Suíça",
+        "team_b": "Europa A"
+    },
+    {
+        "kickoff": "2026-06-18T19:00:00",
+        "team_a": "Canadá",
+        "team_b": "Qatar"
+    },
+    {
+        "kickoff": "2026-06-18T22:00:00",
+        "team_a": "México",
+        "team_b": "Coreia do Sul"
+    },
+    {
+        "kickoff": "2026-06-19T01:00:00",
+        "team_a": "Europa C",
+        "team_b": "Paraguai"
+    },
+    {
+        "kickoff": "2026-06-19T16:00:00",
+        "team_a": "Estados Unidos",
+        "team_b": "Austrália"
+    },
+    {
+        "kickoff": "2026-06-19T19:00:00",
+        "team_a": "Escócia",
+        "team_b": "Marrocos"
+    },
+    {
+        "kickoff": "2026-06-19T22:00:00",
+        "team_a": "Brasil",
+        "team_b": "Haiti"
+    },
+    {
+        "kickoff": "2026-06-20T14:00:00",
+        "team_a": "Holanda",
+        "team_b": "Europa B"
+    },
+    {
+        "kickoff": "2026-06-20T17:00:00",
+        "team_a": "Alemanha",
+        "team_b": "Costa do Marfim"
+    },
+    {
+        "kickoff": "2026-06-20T21:00:00",
+        "team_a": "Equador",
+        "team_b": "Curaçao"
+    },
+    {
+        "kickoff": "2026-06-21T01:00:00",
+        "team_a": "Tunísia",
+        "team_b": "Japão"
+    },
+    {
+        "kickoff": "2026-06-21T13:00:00",
+        "team_a": "Espanha",
+        "team_b": "Arábia Saudita"
+    },
+    {
+        "kickoff": "2026-06-21T16:00:00",
+        "team_a": "Bélgica",
+        "team_b": "Irã"
+    },
+    {
+        "kickoff": "2026-06-21T19:00:00",
+        "team_a": "Uruguai",
+        "team_b": "Cabo Verde"
+    },
+    {
+        "kickoff": "2026-06-21T22:00:00",
+        "team_a": "Nova Zelândia",
+        "team_b": "Egito"
+    },
+    {
+        "kickoff": "2026-06-22T14:00:00",
+        "team_a": "Argentina",
+        "team_b": "Áustria"
+    },
+    {
+        "kickoff": "2026-06-22T18:00:00",
+        "team_a": "França",
+        "team_b": "Intercontinental 2"
+    },
+    {
+        "kickoff": "2026-06-22T21:00:00",
+        "team_a": "Noruega",
+        "team_b": "Senegal"
+    },
+    {
+        "kickoff": "2026-06-23T00:00:00",
+        "team_a": "Jordânia",
+        "team_b": "Argélia"
+    },
+    {
+        "kickoff": "2026-06-23T14:00:00",
+        "team_a": "Portugal",
+        "team_b": "Uzbequistão"
+    },
+    {
+        "kickoff": "2026-06-23T17:00:00",
+        "team_a": "Inglaterra",
+        "team_b": "Gana"
+    },
+    {
+        "kickoff": "2026-06-23T20:00:00",
+        "team_a": "Panamá",
+        "team_b": "Croácia"
+    },
+    {
+        "kickoff": "2026-06-23T23:00:00",
+        "team_a": "Colômbia",
+        "team_b": "Intercontinental 1"
+    },
+    {
+        "kickoff": "2026-06-24T16:00:00",
+        "team_a": "Suíça",
+        "team_b": "Canadá"
+    },
+    {
+        "kickoff": "2026-06-24T16:00:00",
+        "team_a": "Europa A",
+        "team_b": "Qatar"
+    },
+    {
+        "kickoff": "2026-06-24T19:00:00",
+        "team_a": "Escócia",
+        "team_b": "Brasil"
+    },
+    {
+        "kickoff": "2026-06-24T19:00:00",
+        "team_a": "Marrocos",
+        "team_b": "Haiti"
+    },
+    {
+        "kickoff": "2026-06-24T22:00:00",
+        "team_a": "Europa D",
+        "team_b": "México"
+    },
+    {
+        "kickoff": "2026-06-24T22:00:00",
+        "team_a": "África do Sul",
+        "team_b": "Coreia do Sul"
+    },
+    {
+        "kickoff": "2026-06-25T17:00:00",
+        "team_a": "Equador",
+        "team_b": "Alemanha"
+    },
+    {
+        "kickoff": "2026-06-25T17:00:00",
+        "team_a": "Curaçao",
+        "team_b": "Costa do Marfim"
+    },
+    {
+        "kickoff": "2026-06-25T20:00:00",
+        "team_a": "Tunísia",
+        "team_b": "Holanda"
+    },
+    {
+        "kickoff": "2026-06-25T20:00:00",
+        "team_a": "Japão",
+        "team_b": "Europa B"
+    },
+    {
+        "kickoff": "2026-06-25T23:00:00",
+        "team_a": "Europa C",
+        "team_b": "Estados Unidos"
+    },
+    {
+        "kickoff": "2026-06-25T23:00:00",
+        "team_a": "Paraguai",
+        "team_b": "Austrália"
+    },
+    {
+        "kickoff": "2026-06-26T16:00:00",
+        "team_a": "Noruega",
+        "team_b": "França"
+    },
+    {
+        "kickoff": "2026-06-26T16:00:00",
+        "team_a": "Senegal",
+        "team_b": "Intercontinental 2"
+    },
+    {
+        "kickoff": "2026-06-26T21:00:00",
+        "team_a": "Uruguai",
+        "team_b": "Espanha"
+    },
+    {
+        "kickoff": "2026-06-26T21:00:00",
+        "team_a": "Cabo Verde",
+        "team_b": "Arábia Saudita"
+    },
+    {
+        "kickoff": "2026-06-26T00:00:00",
+        "team_a": "Egito",
+        "team_b": "Irã"
+    },
+    {
+        "kickoff": "2026-06-26T00:00:00",
+        "team_a": "Nova Zelândia",
+        "team_b": "Bélgica"
+    },
+    {
+        "kickoff": "2026-06-27T18:00:00",
+        "team_a": "Panamá",
+        "team_b": "Inglaterra"
+    },
+    {
+        "kickoff": "2026-06-27T18:00:00",
+        "team_a": "Croácia",
+        "team_b": "Gana"
+    },
+    {
+        "kickoff": "2026-06-27T20:30:00",
+        "team_a": "Colômbia",
+        "team_b": "Portugal"
+    },
+    {
+        "kickoff": "2026-06-27T20:30:00",
+        "team_a": "Intercontinental 1",
+        "team_b": "Uzbequistão"
+    },
+    {
+        "kickoff": "2026-06-27T23:00:00",
+        "team_a": "Jordânia",
+        "team_b": "Argentina"
+    },
+    {
+        "kickoff": "2026-06-27T23:00:00",
+        "team_a": "Argélia",
+        "team_b": "Áustria"
+    }
+]

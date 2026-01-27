@@ -94,6 +94,11 @@ require_once __DIR__ . '/../config.php';
     <script>
         const apiBase = '<?= $apiBase ?>';
         const frontendBase = window.location.origin + '/user/';
+        const token = localStorage.getItem('admin_token');
+
+        if (!token) {
+            window.location.href = '/admin/login.php';
+        }
 
         function showToast(message, type = 'success') {
             const toast = document.getElementById('alertToast');
@@ -144,7 +149,8 @@ require_once __DIR__ . '/../config.php';
         }
 
         function copyLink(link, btn) {
-            navigator.clipboard.writeText(link).then(() => {
+            // Função auxiliar para feedback visual
+            function onSuccess() {
                 btn.classList.add('copied');
                 btn.textContent = '✅ Copiado!';
                 showToast('📋 Link copiado!', 'success');
@@ -152,9 +158,37 @@ require_once __DIR__ . '/../config.php';
                     btn.classList.remove('copied');
                     btn.textContent = '📋 Copiar';
                 }, 2000);
-            }).catch(() => {
+            }
+
+            function onError() {
                 showToast('Erro ao copiar', 'error');
-            });
+            }
+
+            // Tenta usar a API moderna do clipboard (requer HTTPS)
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(link).then(onSuccess).catch(onError);
+            } else {
+                // Fallback para ambientes HTTP usando execCommand
+                try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = link;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    textArea.style.top = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    if (successful) {
+                        onSuccess();
+                    } else {
+                        onError();
+                    }
+                } catch (err) {
+                    onError();
+                }
+            }
         }
 
         // Add new participant
@@ -169,7 +203,10 @@ require_once __DIR__ . '/../config.php';
             try {
                 const res = await fetch(`${apiBase}/participants`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify(data)
                 });
 
@@ -190,7 +227,10 @@ require_once __DIR__ . '/../config.php';
             if (!confirm('Tem certeza que deseja remover este participante? Todos os palpites serão perdidos.')) return;
 
             try {
-                await fetch(`${apiBase}/participants/${id}`, { method: 'DELETE' });
+                await fetch(`${apiBase}/participants/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 showToast('🗑️ Participante removido', 'success');
                 loadParticipants();
             } catch (error) {

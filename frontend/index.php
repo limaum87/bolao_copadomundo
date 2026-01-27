@@ -227,11 +227,7 @@ require_once __DIR__ . '/config.php';
                 <p class="hero-subtitle">
                     Faça seus palpites para todos os jogos da Copa do Mundo e concorra a prêmios incríveis!
                 </p>
-                <div class="hero-buttons">
-                    <a href="/admin/" class="btn btn-hero btn-secondary">
-                        🔧 Área Admin
-                    </a>
-                </div>
+                <!-- Admin button removed -->
             </div>
         </div>
     </section>

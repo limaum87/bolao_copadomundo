@@ -1,10 +1,13 @@
 import os
-from datetime import datetime
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+from werkzeug.security import check_password_hash, generate_password_hash
 from .database import engine, session_scope
-from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome
+from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome, AdminUser
 from .scoring import calculate_scores, score_prediction
 
 
@@ -12,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = (BASE_DIR / "data.db").resolve()
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'dev_secret_key_change_in_prod'
 CORS(app)
 
 
@@ -31,6 +35,68 @@ def health():
     return {"status": "ok"}
 
 
+def verify_auth_token():
+    token = None
+    if 'Authorization' in request.headers:
+        token = request.headers['Authorization'].split(" ")[1] if " " in request.headers['Authorization'] else request.headers['Authorization']
+    
+    if not token:
+        return False
+    
+    try:
+        jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+        return True
+    except:
+        return False
+
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not verify_auth_token():
+             return jsonify({'message': 'Token is missing or invalid!'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    auth = request.get_json()
+    if not auth or not auth.get('username') or not auth.get('password'):
+        return jsonify({'message': 'Could not verify'}), 401
+    
+    with session_scope() as session:
+        user = session.query(AdminUser).filter_by(username=auth.get('username')).first()
+        if not user:
+             return jsonify({'message': 'Could not verify'}), 401
+        
+        if check_password_hash(user.password_hash, auth.get('password')):
+            token = jwt.encode({
+                'user_id': user.id,
+                'exp': datetime.utcnow() + timedelta(hours=24)
+            }, app.config['SECRET_KEY'], algorithm="HS256")
+            return jsonify({'token': token})
+    
+    return jsonify({'message': 'Could not verify'}), 401
+
+
+@app.route("/change-password", methods=["POST"])
+@token_required
+def change_password():
+    data = request.get_json()
+    new_password = data.get('new_password')
+    if not new_password:
+        return jsonify({'message': 'New password required'}), 400
+        
+    with session_scope() as session:
+        user = session.query(AdminUser).filter_by(username="admin").first()
+        if user:
+            user.password_hash = generate_password_hash(new_password)
+            return jsonify({'message': 'Password updated successfully'})
+            
+    return jsonify({'message': 'User not found'}), 404
+
+
 # Participants CRUD
 @app.route("/participants", methods=["GET", "POST"])
 def participants():
@@ -38,6 +104,9 @@ def participants():
         if request.method == "GET":
             rows = session.query(Participant).all()
             return jsonify([serialize_participant(row) for row in rows])
+
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
 
         data = request.get_json()
         participant = Participant(name=data.get("name"), email=data.get("email"))
@@ -55,6 +124,9 @@ def participant_detail(participant_id: int):
 
         if request.method == "GET":
             return serialize_participant(participant)
+
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
 
         if request.method == "DELETE":
             session.delete(participant)
@@ -74,6 +146,9 @@ def games():
             rows = session.query(Game).order_by(Game.kickoff).all()
             return jsonify([serialize_game(row) for row in rows])
 
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
+
         data = request.get_json()
         game = Game(
             kickoff=parse_date(data.get("kickoff")),
@@ -87,6 +162,49 @@ def games():
         return serialize_game(game), 201
 
 
+@app.route("/games/all", methods=["DELETE"])
+@token_required
+def delete_all_games():
+    """Delete all games and their predictions."""
+    with session_scope() as session:
+        # Delete all predictions first (foreign key constraint)
+        session.query(Prediction).delete()
+        # Delete all games
+        count = session.query(Game).delete()
+        return {"deleted": count}
+
+
+@app.route("/games/import", methods=["POST"])
+@token_required
+def import_games():
+    """Import multiple games from JSON array."""
+    data = request.get_json()
+    if not isinstance(data, list):
+        return {"error": "Expected a JSON array"}, 400
+    
+    imported = 0
+    with session_scope() as session:
+        for item in data:
+            kickoff = item.get("kickoff")
+            team_a = item.get("team_a")
+            team_b = item.get("team_b")
+            
+            if not kickoff or not team_a or not team_b:
+                continue
+            
+            game = Game(
+                kickoff=parse_date(kickoff),
+                team_a=team_a,
+                team_b=team_b,
+                score_a=item.get("score_a"),
+                score_b=item.get("score_b"),
+            )
+            session.add(game)
+            imported += 1
+    
+    return {"imported": imported}
+
+
 @app.route("/games/<int:game_id>", methods=["GET", "PUT", "DELETE"])
 def game_detail(game_id: int):
     with session_scope() as session:
@@ -96,6 +214,9 @@ def game_detail(game_id: int):
 
         if request.method == "GET":
             return serialize_game(game)
+
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
 
         if request.method == "DELETE":
             session.delete(game)
@@ -108,6 +229,73 @@ def game_detail(game_id: int):
         game.team_b = data.get("team_b", game.team_b)
         game.score_a = data.get("score_a", game.score_a)
         game.score_b = data.get("score_b", game.score_b)
+        return serialize_game(game)
+
+
+@app.route("/games/result", methods=["PUT"])
+@token_required
+def game_result():
+    """Update the result of a game by team abbreviations."""
+    data = request.get_json()
+
+    team_a = data.get("team_a", "").strip().upper()
+    team_b = data.get("team_b", "").strip().upper()
+    score_a = data.get("score_a")
+    score_b = data.get("score_b")
+    date_str = data.get("date")  # Opcional: formato "YYYY-MM-DD"
+
+    if not team_a or not team_b:
+        return {"error": "Both team_a and team_b are required (3-letter country codes)"}, 400
+
+    if score_a is None or score_b is None:
+        return {"error": "Both score_a and score_b are required"}, 400
+
+    if not isinstance(score_a, int) or score_a < 0:
+        return {"error": "score_a must be a non-negative integer"}, 400
+    if not isinstance(score_b, int) or score_b < 0:
+        return {"error": "score_b must be a non-negative integer"}, 400
+
+    with session_scope() as session:
+        # Busca jogos entre os dois times (em qualquer ordem)
+        query = session.query(Game).filter(
+            ((Game.team_a.ilike(f"%{team_a}%")) & (Game.team_b.ilike(f"%{team_b}%"))) |
+            ((Game.team_a.ilike(f"%{team_b}%")) & (Game.team_b.ilike(f"%{team_a}%")))
+        )
+
+        # Filtra por data se fornecida
+        if date_str:
+            try:
+                from sqlalchemy import func
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                query = query.filter(func.date(Game.kickoff) == target_date)
+            except ValueError:
+                return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
+
+        games = query.order_by(Game.kickoff).all()
+
+        if not games:
+            msg = f"Game not found between {team_a} and {team_b}"
+            if date_str:
+                msg += f" on {date_str}"
+            return {"error": msg}, 404
+
+        if len(games) > 1:
+            # Se houver múltiplos jogos, pega o primeiro sem resultado
+            game = next((g for g in games if g.score_a is None), None)
+            if not game:
+                # Todos já têm resultado, pega o último
+                game = games[-1]
+        else:
+            game = games[0]
+
+        # Ajusta o placar conforme a ordem dos times no jogo
+        if team_a.upper() in game.team_a.upper():
+            game.score_a = score_a
+            game.score_b = score_b
+        else:
+            game.score_a = score_b
+            game.score_b = score_a
+
         return serialize_game(game)
 
 
@@ -206,6 +394,9 @@ def tournament_outcome():
         if request.method == "GET":
             return serialize_outcome(outcome)
 
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
+
         data = request.get_json()
         outcome.champion = data.get("champion", outcome.champion)
         outcome.runner_up = data.get("runner_up", outcome.runner_up)
@@ -242,12 +433,14 @@ def score_preview():
 
 
 @app.route("/backup/export", methods=["GET"])
+@token_required
 def export_backup():
     ensure_db_exists()
     return send_file(DB_PATH, as_attachment=True, download_name="bolao_backup.sqlite")
 
 
 @app.route("/backup/import", methods=["POST"])
+@token_required
 def import_backup():
     if "file" not in request.files:
         return {"error": "Missing file"}, 400
