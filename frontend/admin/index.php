@@ -116,22 +116,25 @@ require_once __DIR__ . '/../config.php';
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
 
     <!-- Change Password Modal -->
-    <div id="changePasswordModal" class="modal">
-        <div class="modal-content">
+    <div id="changePasswordModal" class="modal-overlay">
+        <div class="modal">
             <div class="modal-header">
                 <h2 class="modal-title">Alterar Senha</h2>
-                <button class="close-modal" onclick="closeChangePasswordModal()">&times;</button>
+                <button class="modal-close" onclick="closeChangePasswordModal()">&times;</button>
             </div>
-            <form id="changePasswordForm">
-                <div class="form-group">
-                    <label class="form-label">Nova Senha</label>
-                    <input type="password" name="new_password" class="form-input" required minlength="4">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" onclick="closeChangePasswordModal()">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Salvar</button>
-                </div>
-            </form>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label class="form-label">Nova Senha</label>
+                        <input type="password" name="new_password" class="form-input" required minlength="4">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeChangePasswordModal()">Cancelar</button>
+                <button type="button" class="btn btn-primary"
+                    onclick="document.getElementById('changePasswordForm').requestSubmit()">Salvar</button>
+            </div>
         </div>
     </div>
 
@@ -234,11 +237,11 @@ require_once __DIR__ . '/../config.php';
         const changePasswordModal = document.getElementById('changePasswordModal');
 
         function openChangePasswordModal() {
-            changePasswordModal.style.display = 'flex';
+            changePasswordModal.classList.add('active');
         }
 
         function closeChangePasswordModal() {
-            changePasswordModal.style.display = 'none';
+            changePasswordModal.classList.remove('active');
             document.getElementById('changePasswordForm').reset();
         }
 
@@ -267,6 +270,14 @@ require_once __DIR__ . '/../config.php';
                 console.error(error);
                 showToast('Erro de conexão', 'error');
             }
+        });
+
+        // Close modal on ESC or overlay click
+        changePasswordModal.addEventListener('click', (e) => {
+            if (e.target === changePasswordModal) closeChangePasswordModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeChangePasswordModal();
         });
 
         // Update export link with token (needs to be handled differently since it's a link)

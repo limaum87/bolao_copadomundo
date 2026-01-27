@@ -87,6 +87,33 @@ require_once __DIR__ . '/../config.php';
         </div>
     </main>
 
+    <!-- Predictions Modal -->
+    <div id="predictionsModal" class="modal-overlay">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h4 class="modal-title" id="predictionsModalTitle">Palpites do Participante</h4>
+                <button type="button" class="modal-close" onclick="closePredictionsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="predictionsList" class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Jogo</th>
+                                <th>Palpite</th>
+                                <th>Placar Real</th>
+                            </tr>
+                        </thead>
+                        <tbody id="predictionsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closePredictionsModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Alert Toast -->
     <div id="alertToast" class="alert"
         style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
@@ -110,33 +137,56 @@ require_once __DIR__ . '/../config.php';
 
         async function loadParticipants() {
             try {
-                const res = await fetch(`${apiBase}/participants`);
-                const participants = await res.json();
+                const [pRes, gRes, sRes] = await Promise.all([
+                    fetch(`${apiBase}/participants`),
+                    fetch(`${apiBase}/games`),
+                    fetch(`${apiBase}/scores`)
+                ]);
+                
+                const participants = await pRes.json();
+                const games = await gRes.json();
+                const scores = await sRes.json();
+                
+                const totalGames = games.length;
 
                 document.getElementById('participantsCount').textContent = `${participants.length} participantes`;
 
                 const tbody = document.querySelector('#participantsTable tbody');
                 tbody.innerHTML = participants.map(p => {
                     const userLink = `${frontendBase}${p.uid}`;
+                    const score = scores.find(s => s.id === p.id);
+                    const predicted = score ? score.games_predicted : 0;
+                    const progressClass = predicted === totalGames ? 'badge-success' : 'badge-warning';
+                    
                     return `
                         <tr>
                             <td>${p.id}</td>
                             <td><strong>${p.name}</strong></td>
                             <td>${p.email || '<span class="text-muted">-</span>'}</td>
                             <td>
+                                <span class="badge ${progressClass}">
+                                    ${predicted} / ${totalGames}
+                                </span>
+                            </td>
+                            <td>
                                 <div class="flex gap-sm" style="align-items: center;">
-                                    <code style="font-size: 0.75rem; background: var(--color-gray-100); padding: 0.25rem 0.5rem; border-radius: 4px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <code style="font-size: 0.75rem; background: var(--color-gray-100); padding: 0.25rem 0.5rem; border-radius: 4px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                         ${userLink}
                                     </code>
                                     <button class="copy-btn" onclick="copyLink('${userLink}', this)">
-                                        📋 Copiar
+                                        📋
                                     </button>
                                 </div>
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-danger" onclick="deleteParticipant(${p.id})">
-                                    🗑️ Remover
-                                </button>
+                                <div class="flex gap-sm">
+                                    <button class="btn btn-sm btn-secondary" onclick="viewPredictions(${p.id}, '${p.uid}', '${p.name}')">
+                                        👁️ Palpites
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteParticipant(${p.id})">
+                                        🗑️
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `;
@@ -147,6 +197,66 @@ require_once __DIR__ . '/../config.php';
                 showToast('Erro ao carregar participantes', 'error');
             }
         }
+
+        // Predictions Modal
+        const predictionsModal = document.getElementById('predictionsModal');
+
+        async function viewPredictions(id, uid, name) {
+            document.getElementById('predictionsModalTitle').textContent = `Palpites de ${name}`;
+            const tbody = document.getElementById('predictionsTableBody');
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center">Carregando...</td></tr>';
+            
+            predictionsModal.classList.add('active');
+
+            try {
+                const [gRes, pRes] = await Promise.all([
+                    fetch(`${apiBase}/games`),
+                    fetch(`${apiBase}/predictions?participant_uid=${uid}`)
+                ]);
+                
+                const games = await gRes.json();
+                const predictions = await pRes.json();
+                
+                tbody.innerHTML = games.map(game => {
+                    const pred = predictions.find(p => p.game_id === game.id);
+                    const hasResult = game.score_a !== null && game.score_b !== null;
+                    
+                    return `
+                        <tr>
+                            <td style="font-size: 0.875rem;">
+                                ${getTeamHtml(game.team_a)} × ${getTeamHtml(game.team_b)}
+                            </td>
+                            <td>
+                                ${pred 
+                                    ? `<strong>${pred.goals_a} × ${pred.goals_b}</strong>` 
+                                    : '<span class="text-muted italic">Sem palpite</span>'}
+                            </td>
+                            <td>
+                                ${hasResult 
+                                    ? `<span class="badge badge-info">${game.score_a} × ${game.score_b}</span>` 
+                                    : '<span class="text-muted">-</span>'}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+            } catch (error) {
+                console.error(error);
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-error">Erro ao carregar palpites</td></tr>';
+            }
+        }
+
+        function closePredictionsModal() {
+            predictionsModal.classList.remove('active');
+        }
+
+        // Close modal on ESC or overlay click
+        predictionsModal.addEventListener('click', (e) => {
+            if (e.target === predictionsModal) closePredictionsModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePredictionsModal();
+        });
 
         function copyLink(link, btn) {
             // Função auxiliar para feedback visual

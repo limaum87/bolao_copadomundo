@@ -75,13 +75,12 @@ def calculate_scores(
         total += score_finals(finals_by_participant.get(participant.id), outcome)
 
         results.append({
-            "participant": {
-                "id": participant.id,
-                "name": participant.name,
-                "uid": participant.uid,
-            },
-            "score": total,
+            "id": participant.id,
+            "name": participant.name,
+            "uid": participant.uid,
+            "total_points": total,
+            "games_predicted": len(predictions_by_participant.get(participant.id, [])),
         })
 
-    results.sort(key=lambda item: item["score"], reverse=True)
+    results.sort(key=lambda item: item["total_points"], reverse=True)
     return results
