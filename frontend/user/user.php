@@ -45,41 +45,74 @@ if (!$uid) {
 
             <!-- Dashboard Section -->
             <section id="dashboardSection" style="display: none;">
-                <div class="form-row">
+                <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
                     <div class="card text-center" style="cursor: pointer; transition: transform 0.2s;"
-                        onclick="showView('predictions')" onmouseover="this.style.transform='translateY(-5px)'"
+                        onclick="showView('games')" onmouseover="this.style.transform='translateY(-5px)'"
                         onmouseout="this.style.transform='translateY(0)'">
-                        <div style="font-size: 4rem; margin-bottom: 1rem;">⚽</div>
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">⚽</div>
                         <h3>Meus Palpites</h3>
-                        <p class="text-muted">Faça seus palpites para os jogos da Copa</p>
+                        <p class="text-muted mb-md">Palpites para os jogos da Copa</p>
+                        <div id="gamesStatusBadge" class="badge badge-warning">Carregando...</div>
+                    </div>
+                    <div class="card text-center" style="cursor: pointer; transition: transform 0.2s;"
+                        onclick="showView('finals')" onmouseover="this.style.transform='translateY(-5px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🥇</div>
+                        <h3>Finais</h3>
+                        <p class="text-muted mb-md">Escolha quem será o campeão</p>
+                        <div id="finalsStatusBadge" class="badge badge-warning">Pendente</div>
                     </div>
                     <div class="card text-center" style="cursor: pointer; transition: transform 0.2s;"
                         onclick="showView('ranking')" onmouseover="this.style.transform='translateY(-5px)'"
                         onmouseout="this.style.transform='translateY(0)'">
-                        <div style="font-size: 4rem; margin-bottom: 1rem;">🏆</div>
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
                         <h3>Ranking</h3>
-                        <p class="text-muted">Veja sua posição na tabela de classificação</p>
+                        <p class="text-muted mb-md">Veja sua posição na tabela</p>
+                        <div class="badge badge-info">Ver Classificação</div>
                     </div>
                 </div>
             </section>
 
-            <!-- Predictions View -->
-            <div id="predictionsView" style="display: none;">
+            <!-- Games View -->
+            <div id="gamesView" style="display: none;">
                 <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
 
-                <!-- Games Section -->
                 <section id="gamesSection">
                     <div class="card-header" style="border: none; padding: 0;">
                         <h2>⚽ Jogos da Copa</h2>
                         <span id="gamesCount" class="badge badge-success"></span>
                     </div>
-
                     <div id="gamesGrid" class="games-grid"></div>
                 </section>
 
-                <!-- Finals Section -->
+                <!-- Scoring Rules -->
+                <section class="card mt-xl">
+                    <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
+                    <div class="form-row">
+                        <div>
+                            <strong class="text-success">10 pontos</strong>
+                            <p class="text-muted">Placar exato</p>
+                        </div>
+                        <div>
+                            <strong class="text-warning">5 pontos</strong>
+                            <p class="text-muted">Apenas resultado</p>
+                        </div>
+                        <div>
+                            <strong style="color: var(--color-blue);">2 pontos</strong>
+                            <p class="text-muted">Placar parcial</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Finals View -->
+            <div id="finalsView" style="display: none;">
+                <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
+
                 <section class="finals-section" id="finalsSection">
                     <h3 class="finals-title">Palpite Final - Classificação</h3>
+                    <p class="text-muted mb-lg text-center">Escolha os times que ficarão nas primeiras posições. Estes
+                        palpites valem muitos pontos!</p>
                     <form id="finalsForm">
                         <input type="hidden" name="participant_uid" value="<?= $uid ?>">
                         <div class="finals-grid">
@@ -110,25 +143,6 @@ if (!$uid) {
                             </button>
                         </div>
                     </form>
-                </section>
-
-                <!-- Scoring Rules -->
-                <section class="card mt-xl">
-                    <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
-                    <div class="form-row">
-                        <div>
-                            <strong class="text-success">10 pontos</strong>
-                            <p class="text-muted">Placar exato</p>
-                        </div>
-                        <div>
-                            <strong class="text-warning">5 pontos</strong>
-                            <p class="text-muted">Vencedor + saldo de gols</p>
-                        </div>
-                        <div>
-                            <strong style="color: var(--color-blue);">2 pontos</strong>
-                            <p class="text-muted">Apenas vencedor correto</p>
-                        </div>
-                    </div>
                 </section>
             </div>
 
@@ -307,7 +321,12 @@ if (!$uid) {
 
             // Update games count
             const openGames = gamesData.filter(g => isGameOpen(g.kickoff)).length;
+            const predictedCount = predictionsData.length;
             document.getElementById('gamesCount').textContent = `${openGames} jogos abertos`;
+
+            const gamesBadge = document.getElementById('gamesStatusBadge');
+            gamesBadge.textContent = `${predictedCount} / ${gamesData.length} palpites`;
+            gamesBadge.className = `badge ${predictedCount === gamesData.length ? 'badge-success' : 'badge-warning'}`;
         }
 
         // Load data
@@ -331,11 +350,19 @@ if (!$uid) {
                 renderGames();
 
                 // Fill finals form
+                const finalsBadge = document.getElementById('finalsStatusBadge');
                 if (myFinals) {
                     ['champion', 'runner_up', 'third_place', 'fourth_place'].forEach(field => {
                         const input = document.querySelector(`#finalsForm [name=${field}]`);
                         if (input && myFinals[field]) input.value = myFinals[field];
                     });
+
+                    const isComplete = myFinals.champion && myFinals.runner_up && myFinals.third_place && myFinals.fourth_place;
+                    finalsBadge.textContent = isComplete ? '✅ Completo' : '⚠️ Incompleto';
+                    finalsBadge.className = `badge ${isComplete ? 'badge-success' : 'badge-warning'}`;
+                } else {
+                    finalsBadge.textContent = '⚠️ Pendente';
+                    finalsBadge.className = 'badge badge-warning';
                 }
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -429,6 +456,9 @@ if (!$uid) {
 
                 if (res.ok) {
                     showToast('🏆 Palpite final salvo!', 'success');
+                    const finalsBadge = document.getElementById('finalsStatusBadge');
+                    finalsBadge.textContent = '✅ Completo';
+                    finalsBadge.className = 'badge badge-success';
                 } else {
                     showToast('Erro ao salvar palpite final', 'error');
                 }
@@ -451,14 +481,17 @@ if (!$uid) {
         function showView(viewName) {
             // Hide all views
             document.getElementById('dashboardSection').style.display = 'none';
-            document.getElementById('predictionsView').style.display = 'none';
+            document.getElementById('gamesView').style.display = 'none';
+            document.getElementById('finalsView').style.display = 'none';
             document.getElementById('rankingView').style.display = 'none';
 
             // Show selected view
             if (viewName === 'dashboard') {
                 document.getElementById('dashboardSection').style.display = 'block';
-            } else if (viewName === 'predictions') {
-                document.getElementById('predictionsView').style.display = 'block';
+            } else if (viewName === 'games') {
+                document.getElementById('gamesView').style.display = 'block';
+            } else if (viewName === 'finals') {
+                document.getElementById('finalsView').style.display = 'block';
             } else if (viewName === 'ranking') {
                 document.getElementById('rankingView').style.display = 'block';
                 loadRanking();
@@ -504,22 +537,22 @@ if (!$uid) {
 
         // Score Breakdown
         const breakdownModal = document.getElementById('scoreBreakdownModal');
-        
+
         async function openBreakdownModal(participantId, name) {
             document.getElementById('breakdownTitle').textContent = `Palpites de ${name}`;
             document.getElementById('breakdownLoading').style.display = 'block';
             document.getElementById('breakdownContent').style.display = 'none';
             document.getElementById('breakdownList').innerHTML = '';
-            
+
             breakdownModal.classList.add('active');
 
             try {
                 const res = await fetch(`${apiBase}/scores/${participantId}/details`);
                 const data = await res.json();
-                
+
                 document.getElementById('breakdownLoading').style.display = 'none';
                 document.getElementById('breakdownContent').style.display = 'block';
-                
+
                 if (data.breakdown.length === 0) {
                     document.getElementById('breakdownList').innerHTML = '<li class="text-center py-lg text-muted">Ainda não marcou pontos</li>';
                 } else {
