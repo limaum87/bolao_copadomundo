@@ -102,8 +102,12 @@ def change_password():
 def participants():
     with session_scope() as session:
         if request.method == "GET":
+            is_admin = verify_auth_token()
             rows = session.query(Participant).all()
-            return jsonify([serialize_participant(row) for row in rows])
+            if is_admin:
+                return jsonify([serialize_participant(row) for row in rows])
+            else:
+                return jsonify([{"id": row.id, "name": row.name} for row in rows])
 
         if not verify_auth_token():
             return jsonify({'message': 'Unauthorized'}), 401
@@ -306,8 +310,13 @@ def predictions():
         if request.method == "GET":
             participant_uid = request.args.get("participant_uid")
             game_id = request.args.get("game_id")
+            is_admin = verify_auth_token()
             
             query = session.query(Prediction)
+            
+            # Bloqueia listagem geral para não-admins para evitar bisbilhoteiros
+            if not is_admin and not participant_uid and not game_id:
+                return jsonify([])
             
             if participant_uid:
                 participant = session.query(Participant).filter_by(uid=participant_uid).first()
@@ -316,6 +325,13 @@ def predictions():
                 query = query.filter(Prediction.participant_id == participant.id)
             
             if game_id:
+                # Se não for admin e não estiver filtrando pelo próprio participante, 
+                # só permite ver palpites de jogos que já começaram.
+                if not is_admin and not participant_uid:
+                    game = session.get(Game, game_id)
+                    if game and game.kickoff > datetime.now():
+                        return jsonify([]) # Esconde palpites alheios antes do jogo
+                
                 query = query.filter(Prediction.game_id == game_id)
                 
             rows = query.all()
@@ -368,6 +384,12 @@ def finals_predictions():
     with session_scope() as session:
         if request.method == "GET":
             participant_uid = request.args.get("participant_uid")
+            is_admin = verify_auth_token()
+            
+            # Bloqueia listagem geral para não-admins
+            if not is_admin and not participant_uid:
+                return jsonify([])
+                
             query = session.query(FinalsPrediction)
             if participant_uid:
                 query = query.join(Participant).filter(Participant.uid == participant_uid)
@@ -530,7 +552,6 @@ def serialize_finals(prediction: FinalsPrediction):
     return {
         "id": prediction.id,
         "participant_id": prediction.participant_id,
-        "participant_uid": prediction.participant.uid if prediction.participant else None,
         "champion": prediction.champion,
         "runner_up": prediction.runner_up,
         "third_place": prediction.third_place,
