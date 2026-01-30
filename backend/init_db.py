@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.database import engine, session_scope
-from backend.models import Base, Game, AdminUser
+from backend.models import Base, Game, AdminUser, ScoringConfig
 from werkzeug.security import generate_password_hash
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +29,15 @@ def load_games():
             new_admin = AdminUser(username="admin", password_hash=hashed_password)
             session.add(new_admin)
             print("Default admin user created.")
+
+    # Create default scoring config
+    with session_scope() as session:
+        config = session.query(ScoringConfig).get(1)
+        if not config:
+            print("Creating default scoring config...")
+            config = ScoringConfig(id=1)
+            session.add(config)
+            print("Default scoring config created.")
 
     if not JSON_FILE.exists():
         raise FileNotFoundError(f"Arquivo não encontrado: {JSON_FILE}")

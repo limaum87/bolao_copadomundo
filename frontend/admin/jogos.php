@@ -35,6 +35,7 @@ require_once __DIR__ . '/../config.php';
                 <a href="/admin/index.php">🏠 Dashboard</a>
                 <a href="/admin/participantes.php">👥 Participantes</a>
                 <a href="/admin/jogos.php" class="active">⚽ Jogos</a>
+                <a href="/admin/configuracoes.php">⚙️ Configurações</a>
             </nav>
 
             <!-- Add Game Form -->
