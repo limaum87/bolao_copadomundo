@@ -86,19 +86,19 @@ if (!$uid) {
                 </section>
 
                 <!-- Scoring Rules -->
-                <section class="card mt-xl">
+                <section class="card mt-xl" id="scoringRulesSection">
                     <h3 class="card-title mb-lg">📊 Regras de Pontuação</h3>
-                    <div class="form-row">
+                    <div class="form-row" id="scoringRulesContent">
                         <div>
-                            <strong class="text-success">10 pontos</strong>
+                            <strong class="text-success" id="ruleExactScore">-- pontos</strong>
                             <p class="text-muted">Placar exato</p>
                         </div>
                         <div>
-                            <strong class="text-warning">5 pontos</strong>
+                            <strong class="text-warning" id="ruleCorrectResult">-- pontos</strong>
                             <p class="text-muted">Apenas resultado</p>
                         </div>
                         <div>
-                            <strong style="color: var(--color-blue);">2 pontos</strong>
+                            <strong style="color: var(--color-blue);" id="rulePartialScore">-- pontos</strong>
                             <p class="text-muted">Placar parcial</p>
                         </div>
                     </div>
@@ -233,6 +233,23 @@ if (!$uid) {
         const uid = '<?= $uid ?>';
         let gamesData = [];
         let predictionsData = [];
+        let scoringConfig = null;
+
+        // Load scoring config and update rules display
+        async function loadScoringConfig() {
+            try {
+                const res = await fetch(`${apiBase}/scoring_config`);
+                if (res.ok) {
+                    scoringConfig = await res.json();
+                    document.getElementById('ruleExactScore').textContent = `${scoringConfig.exact_score} pontos`;
+                    document.getElementById('ruleCorrectResult').textContent = `${scoringConfig.correct_result} pontos`;
+                    document.getElementById('rulePartialScore').textContent = `${scoringConfig.partial_score} pontos`;
+                }
+            } catch (error) {
+                console.error('Error loading scoring config:', error);
+            }
+        }
+        loadScoringConfig();
 
         // Format date for display
         function formatDate(isoString) {

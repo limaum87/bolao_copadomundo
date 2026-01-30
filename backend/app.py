@@ -7,8 +7,8 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from .database import engine, session_scope
-from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome, AdminUser
-from .scoring import calculate_scores, score_prediction
+from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome, AdminUser, ScoringConfig
+from .scoring import calculate_scores, score_prediction, get_scoring_config_dict
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -450,6 +450,8 @@ def scores():
         predictions = session.query(Prediction).all()
         finals_predictions = session.query(FinalsPrediction).all()
         outcome = session.query(TournamentOutcome).get(1)
+        config = session.query(ScoringConfig).get(1)
+        scoring_cfg = get_scoring_config_dict(config)
 
         results = calculate_scores(
             participants=participants,
@@ -457,6 +459,7 @@ def scores():
             predictions=predictions,
             finals_predictions=finals_predictions,
             outcome=outcome,
+            scoring_cfg=scoring_cfg,
         )
         return jsonify(results)
 
@@ -472,6 +475,8 @@ def score_details(participant_id: int):
         predictions = session.query(Prediction).filter_by(participant_id=participant_id).all()
         finals_prediction = session.query(FinalsPrediction).filter_by(participant_id=participant_id).first()
         outcome = session.query(TournamentOutcome).get(1)
+        config = session.query(ScoringConfig).get(1)
+        scoring_cfg = get_scoring_config_dict(config)
 
         from .scoring import get_score_breakdown
         breakdown = get_score_breakdown(
@@ -480,6 +485,7 @@ def score_details(participant_id: int):
             predictions=predictions,
             finals_prediction=finals_prediction,
             outcome=outcome,
+            scoring_cfg=scoring_cfg,
         )
 
         return jsonify({
@@ -496,7 +502,36 @@ def score_preview():
     data = request.get_json()
     prediction_stub = Prediction(goals_a=data.get("goals_a"), goals_b=data.get("goals_b"))
     game_stub = Game(score_a=data.get("score_a"), score_b=data.get("score_b"))
-    return {"points": score_prediction(prediction_stub, game_stub)}
+    with session_scope() as session:
+        config = session.query(ScoringConfig).get(1)
+        scoring_cfg = get_scoring_config_dict(config)
+    return {"points": score_prediction(prediction_stub, game_stub, scoring_cfg=scoring_cfg)}
+
+
+@app.route("/scoring_config", methods=["GET", "PUT"])
+def scoring_config():
+    with session_scope() as session:
+        config = session.query(ScoringConfig).get(1)
+        if not config:
+            config = ScoringConfig(id=1)
+            session.add(config)
+            session.flush()
+
+        if request.method == "GET":
+            return jsonify(serialize_scoring_config(config))
+
+        if not verify_auth_token():
+            return jsonify({'message': 'Unauthorized'}), 401
+
+        data = request.get_json()
+        for field in ("exact_score", "correct_result", "partial_score",
+                      "champion", "runner_up", "third_place", "fourth_place"):
+            if field in data:
+                value = data[field]
+                if not isinstance(value, int) or value < 0:
+                    return {"error": f"{field} must be a non-negative integer"}, 400
+                setattr(config, field, value)
+        return jsonify(serialize_scoring_config(config))
 
 
 @app.route("/backup/export", methods=["GET"])
@@ -565,6 +600,18 @@ def serialize_outcome(outcome: TournamentOutcome):
         "runner_up": outcome.runner_up,
         "third_place": outcome.third_place,
         "fourth_place": outcome.fourth_place,
+    }
+
+
+def serialize_scoring_config(config: ScoringConfig):
+    return {
+        "exact_score": config.exact_score,
+        "correct_result": config.correct_result,
+        "partial_score": config.partial_score,
+        "champion": config.champion,
+        "runner_up": config.runner_up,
+        "third_place": config.third_place,
+        "fourth_place": config.fourth_place,
     }
 
 

@@ -1,5 +1,30 @@
-from typing import Dict, List
-from .models import FinalsPrediction, Game, Participant, Prediction, TournamentOutcome
+from typing import Dict, List, Optional
+from .models import FinalsPrediction, Game, Participant, Prediction, ScoringConfig, TournamentOutcome
+
+
+DEFAULT_SCORING = {
+    "exact_score": 10,
+    "correct_result": 5,
+    "partial_score": 2,
+    "champion": 50,
+    "runner_up": 15,
+    "third_place": 10,
+    "fourth_place": 10,
+}
+
+
+def get_scoring_config_dict(config: Optional[ScoringConfig]) -> Dict[str, int]:
+    if not config:
+        return dict(DEFAULT_SCORING)
+    return {
+        "exact_score": config.exact_score,
+        "correct_result": config.correct_result,
+        "partial_score": config.partial_score,
+        "champion": config.champion,
+        "runner_up": config.runner_up,
+        "third_place": config.third_place,
+        "fourth_place": config.fourth_place,
+    }
 
 
 def _result_code(goals_a: int, goals_b: int) -> int:
@@ -10,37 +35,35 @@ def _result_code(goals_a: int, goals_b: int) -> int:
     return 0
 
 
-def score_prediction(prediction: Prediction, game: Game) -> int:
+def score_prediction(prediction: Prediction, game: Game, scoring_cfg: Optional[Dict[str, int]] = None) -> int:
+    cfg = scoring_cfg or DEFAULT_SCORING
+
     if game.score_a is None or game.score_b is None:
         return 0
 
     if prediction.goals_a == game.score_a and prediction.goals_b == game.score_b:
-        return 10
+        return cfg["exact_score"]
 
     predicted_result = _result_code(prediction.goals_a, prediction.goals_b)
     actual_result = _result_code(game.score_a, game.score_b)
 
     if predicted_result == actual_result:
-        return 5
+        return cfg["correct_result"]
 
     if prediction.goals_a == game.score_a or prediction.goals_b == game.score_b:
-        return 2
+        return cfg["partial_score"]
 
     return 0
 
 
-def score_finals(prediction: FinalsPrediction, outcome: TournamentOutcome) -> int:
+def score_finals(prediction: FinalsPrediction, outcome: TournamentOutcome, scoring_cfg: Optional[Dict[str, int]] = None) -> int:
     if not outcome or not prediction:
         return 0
 
+    cfg = scoring_cfg or DEFAULT_SCORING
     points = 0
-    mapping = {
-        "champion": 50,
-        "runner_up": 15,
-        "third_place": 10,
-        "fourth_place": 10,
-    }
-    for field, pts in mapping.items():
+    for field in ("champion", "runner_up", "third_place", "fourth_place"):
+        pts = cfg[field]
         if getattr(prediction, field) and getattr(outcome, field):
             if getattr(prediction, field).lower() == getattr(outcome, field).lower():
                 points += pts
@@ -53,7 +76,10 @@ def calculate_scores(
     predictions: List[Prediction],
     finals_predictions: List[FinalsPrediction],
     outcome: TournamentOutcome,
+    scoring_cfg: Optional[Dict[str, int]] = None,
 ) -> List[Dict]:
+    cfg = scoring_cfg or DEFAULT_SCORING
+
     predictions_by_participant: Dict[int, List[Prediction]] = {}
     for pred in predictions:
         predictions_by_participant.setdefault(pred.participant_id, []).append(pred)
@@ -70,9 +96,9 @@ def calculate_scores(
         for pred in predictions_by_participant.get(participant.id, []):
             game = game_lookup.get(pred.game_id)
             if game:
-                total += score_prediction(pred, game)
+                total += score_prediction(pred, game, scoring_cfg=cfg)
 
-        total += score_finals(finals_by_participant.get(participant.id), outcome)
+        total += score_finals(finals_by_participant.get(participant.id), outcome, scoring_cfg=cfg)
 
         results.append({
             "id": participant.id,
@@ -92,7 +118,9 @@ def get_score_breakdown(
     predictions: List[Prediction],
     finals_prediction: FinalsPrediction,
     outcome: TournamentOutcome,
+    scoring_cfg: Optional[Dict[str, int]] = None,
 ) -> List[Dict]:
+    cfg = scoring_cfg or DEFAULT_SCORING
     breakdown = []
     game_lookup = {game.id: game for game in games}
 
@@ -102,14 +130,14 @@ def get_score_breakdown(
         if not game or game.score_a is None or game.score_b is None:
             continue
 
-        pts = score_prediction(pred, game)
+        pts = score_prediction(pred, game, scoring_cfg=cfg)
         if pts > 0:
             text = ""
-            if pts == 10:
+            if pts == cfg["exact_score"]:
                 text = f"Acertou em cheio o placar {game.team_a} {game.score_a} × {game.score_b} {game.team_b}!"
-            elif pts == 5:
+            elif pts == cfg["correct_result"]:
                 text = f"Acertou o resultado (vencedor/empate) de {game.team_a} × {game.team_b}!"
-            elif pts == 2:
+            elif pts == cfg["partial_score"]:
                 text = f"Acertou a quantidade de gols de um dos times em {game.team_a} × {game.team_b}!"
 
             breakdown.append({
@@ -121,13 +149,14 @@ def get_score_breakdown(
 
     # Points from finals
     if finals_prediction and outcome:
-        mapping = {
-            "champion": ("Campeão", 50),
-            "runner_up": ("Vice-campeão", 15),
-            "third_place": ("3º Lugar", 10),
-            "fourth_place": ("4º Lugar", 10),
+        finals_labels = {
+            "champion": "Campeão",
+            "runner_up": "Vice-campeão",
+            "third_place": "3º Lugar",
+            "fourth_place": "4º Lugar",
         }
-        for field, (label, pts) in mapping.items():
+        for field, label in finals_labels.items():
+            pts = cfg[field]
             pred_team = getattr(finals_prediction, field)
             real_team = getattr(outcome, field)
             if pred_team and real_team and pred_team.lower() == real_team.lower():

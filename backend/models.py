@@ -81,6 +81,21 @@ class TournamentOutcome(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ScoringConfig(Base):
+    __tablename__ = "scoring_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    exact_score = Column(Integer, nullable=False, default=10)
+    correct_result = Column(Integer, nullable=False, default=5)
+    partial_score = Column(Integer, nullable=False, default=2)
+    champion = Column(Integer, nullable=False, default=50)
+    runner_up = Column(Integer, nullable=False, default=15)
+    third_place = Column(Integer, nullable=False, default=10)
+    fourth_place = Column(Integer, nullable=False, default=10)
+
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class AdminUser(Base):
     __tablename__ = "admin_users"
 
