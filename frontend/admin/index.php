@@ -12,6 +12,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/styles.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
 <body>
@@ -134,8 +135,8 @@ require_once __DIR__ . '/../config.php';
     </div>
 
     <!-- Alert Toast -->
-    <div id="alertToast" class="alert"
-        style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
+    <script src="/assets/js/toast.js"></script>
 
     <!-- Change Password Modal -->
     <div id="changePasswordModal" class="modal-overlay">
@@ -171,14 +172,6 @@ require_once __DIR__ . '/../config.php';
         function logout() {
             localStorage.removeItem('admin_token');
             window.location.href = '/admin/login.php';
-        }
-
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('alertToast');
-            toast.className = `alert alert-${type}`;
-            toast.innerHTML = message;
-            toast.style.display = 'flex';
-            setTimeout(() => toast.style.display = 'none', 3000);
         }
 
         async function loadStats() {

@@ -17,6 +17,7 @@ if (!$uid) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/css/styles.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
 <body>
@@ -223,9 +224,9 @@ if (!$uid) {
         </div>
     </div>
 
-    <!-- Alert Toast -->
-    <div id="alertToast" class="alert"
-        style="position: fixed; bottom: 20px; right: 20px; display: none; max-width: 400px; z-index: 1001;"></div>
+    <!-- Toast -->
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
+    <script src="/assets/js/toast.js"></script>
 
     <script src="/assets/js/flags.js"></script>
     <script>
@@ -268,18 +269,6 @@ if (!$uid) {
             return new Date(kickoff) > new Date();
         }
 
-        // Show toast notification
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('alertToast');
-            toast.className = `alert alert-${type}`;
-            toast.innerHTML = message;
-            toast.style.display = 'flex';
-            setTimeout(() => {
-                toast.style.display = 'none';
-            }, 3000);
-        }
-
-        // Render games
         function renderGames() {
             const grid = document.getElementById('gamesGrid');
             grid.innerHTML = '';
