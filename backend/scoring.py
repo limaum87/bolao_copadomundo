@@ -108,7 +108,7 @@ def calculate_scores(
             "games_predicted": len(predictions_by_participant.get(participant.id, [])),
         })
 
-    results.sort(key=lambda item: item["total_points"], reverse=True)
+    results.sort(key=lambda item: (-item["total_points"], item["name"].lower()))
     return results
 
 
