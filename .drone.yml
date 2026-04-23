@@ -9,22 +9,25 @@ trigger:
     - push
 
 steps:
-  - name: deploy
+  - name: git-pull
     image: alpine/git
     volumes:
       - name: apps
         path: /opt/infra/apps
-      - name: sites
-        path: /opt/infra/infra/sites
       - name: ssh
         path: /root/.ssh
-      - name: docker-sock
-        path: /var/run/docker.sock
-      - name: docker-bin
-        path: /usr/bin/docker
     commands:
       - cd /opt/infra/apps/bolao_copadomundo
       - git pull origin main
+
+  - name: docker-deploy
+    image: docker:27-cli
+    volumes:
+      - name: sites
+        path: /opt/infra/infra/sites
+      - name: docker-sock
+        path: /var/run/docker.sock
+    commands:
       - cd /opt/infra/infra/sites/bolao-site
       - docker compose build
       - docker compose up -d --force-recreate
@@ -42,6 +45,3 @@ volumes:
   - name: docker-sock
     host:
       path: /var/run/docker.sock
-  - name: docker-bin
-    host:
-      path: /usr/bin/docker
