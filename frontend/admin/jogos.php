@@ -438,8 +438,12 @@ require_once __DIR__ . '/../config.php';
 
             try {
                 const [predRes, partRes] = await Promise.all([
-                    fetch(`${apiBase}/predictions?game_id=${gameId}`),
-                    fetch(`${apiBase}/participants`)
+                    fetch(`${apiBase}/predictions?game_id=${gameId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${apiBase}/participants`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
                 ]);
 
                 const predictions = await predRes.json();
