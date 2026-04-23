@@ -23,6 +23,8 @@ steps:
   - name: docker-deploy
     image: docker:27-cli
     volumes:
+      - name: apps
+        path: /opt/infra/apps
       - name: sites
         path: /opt/infra/infra/sites
       - name: docker-sock
