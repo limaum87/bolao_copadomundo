@@ -14,6 +14,8 @@ steps:
     volumes:
       - name: apps
         path: /opt/infra/apps
+      - name: sites
+        path: /opt/infra/infra/sites
       - name: ssh
         path: /root/.ssh
       - name: docker-sock
@@ -31,6 +33,9 @@ volumes:
   - name: apps
     host:
       path: /opt/infra/apps
+  - name: sites
+    host:
+      path: /opt/infra/infra/sites
   - name: ssh
     host:
       path: /root/.ssh
