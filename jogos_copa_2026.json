@@ -7,12 +7,12 @@
     {
         "kickoff": "2026-06-11T23:00:00",
         "team_a": "Coreia do Sul",
-        "team_b": "Europa D"
+        "team_b": "República Tcheca"
     },
     {
         "kickoff": "2026-06-12T16:00:00",
         "team_a": "Canadá",
-        "team_b": "Europa A"
+        "team_b": "Bósnia"
     },
     {
         "kickoff": "2026-06-12T22:00:00",
@@ -22,11 +22,11 @@
     {
         "kickoff": "2026-06-13T01:00:00",
         "team_a": "Austrália",
-        "team_b": "Europa C"
+        "team_b": "Turquia"
     },
     {
         "kickoff": "2026-06-13T16:00:00",
-        "team_a": "Qatar",
+        "team_a": "Catar",
         "team_b": "Suíça"
     },
     {
@@ -56,7 +56,7 @@
     },
     {
         "kickoff": "2026-06-14T23:00:00",
-        "team_a": "Europa B",
+        "team_a": "Suécia",
         "team_b": "Tunísia"
     },
     {
@@ -86,7 +86,7 @@
     },
     {
         "kickoff": "2026-06-16T19:00:00",
-        "team_a": "Intercontinental 2",
+        "team_a": "Iraque",
         "team_b": "Noruega"
     },
     {
@@ -102,7 +102,7 @@
     {
         "kickoff": "2026-06-17T14:00:00",
         "team_a": "Portugal",
-        "team_b": "Intercontinental 1"
+        "team_b": "RD Congo"
     },
     {
         "kickoff": "2026-06-17T17:00:00",
@@ -121,18 +121,18 @@
     },
     {
         "kickoff": "2026-06-18T13:00:00",
-        "team_a": "Europa D",
+        "team_a": "República Tcheca",
         "team_b": "África do Sul"
     },
     {
         "kickoff": "2026-06-18T16:00:00",
         "team_a": "Suíça",
-        "team_b": "Europa A"
+        "team_b": "Bósnia"
     },
     {
         "kickoff": "2026-06-18T19:00:00",
         "team_a": "Canadá",
-        "team_b": "Qatar"
+        "team_b": "Catar"
     },
     {
         "kickoff": "2026-06-18T22:00:00",
@@ -141,7 +141,7 @@
     },
     {
         "kickoff": "2026-06-19T01:00:00",
-        "team_a": "Europa C",
+        "team_a": "Turquia",
         "team_b": "Paraguai"
     },
     {
@@ -162,7 +162,7 @@
     {
         "kickoff": "2026-06-20T14:00:00",
         "team_a": "Holanda",
-        "team_b": "Europa B"
+        "team_b": "Suécia"
     },
     {
         "kickoff": "2026-06-20T17:00:00",
@@ -207,7 +207,7 @@
     {
         "kickoff": "2026-06-22T18:00:00",
         "team_a": "França",
-        "team_b": "Intercontinental 2"
+        "team_b": "Iraque"
     },
     {
         "kickoff": "2026-06-22T21:00:00",
@@ -237,7 +237,7 @@
     {
         "kickoff": "2026-06-23T23:00:00",
         "team_a": "Colômbia",
-        "team_b": "Intercontinental 1"
+        "team_b": "RD Congo"
     },
     {
         "kickoff": "2026-06-24T16:00:00",
@@ -246,8 +246,8 @@
     },
     {
         "kickoff": "2026-06-24T16:00:00",
-        "team_a": "Europa A",
-        "team_b": "Qatar"
+        "team_a": "Bósnia",
+        "team_b": "Catar"
     },
     {
         "kickoff": "2026-06-24T19:00:00",
@@ -261,7 +261,7 @@
     },
     {
         "kickoff": "2026-06-24T22:00:00",
-        "team_a": "Europa D",
+        "team_a": "República Tcheca",
         "team_b": "México"
     },
     {
@@ -287,11 +287,11 @@
     {
         "kickoff": "2026-06-25T20:00:00",
         "team_a": "Japão",
-        "team_b": "Europa B"
+        "team_b": "Suécia"
     },
     {
         "kickoff": "2026-06-25T23:00:00",
-        "team_a": "Europa C",
+        "team_a": "Turquia",
         "team_b": "Estados Unidos"
     },
     {
@@ -307,7 +307,7 @@
     {
         "kickoff": "2026-06-26T16:00:00",
         "team_a": "Senegal",
-        "team_b": "Intercontinental 2"
+        "team_b": "Iraque"
     },
     {
         "kickoff": "2026-06-26T21:00:00",
@@ -346,7 +346,7 @@
     },
     {
         "kickoff": "2026-06-27T20:30:00",
-        "team_a": "Intercontinental 1",
+        "team_a": "RD Congo",
         "team_b": "Uzbequistão"
     },
     {
