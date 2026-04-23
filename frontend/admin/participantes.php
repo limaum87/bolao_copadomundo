@@ -134,7 +134,9 @@ require_once __DIR__ . '/../config.php';
         async function loadParticipants() {
             try {
                 const [pRes, gRes, sRes] = await Promise.all([
-                    fetch(`${apiBase}/participants`),
+                    fetch(`${apiBase}/participants`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
                     fetch(`${apiBase}/games`),
                     fetch(`${apiBase}/scores`)
                 ]);
