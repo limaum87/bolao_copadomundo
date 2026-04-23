@@ -181,23 +181,35 @@ def delete_all_games():
 @app.route("/games/import", methods=["POST"])
 @token_required
 def import_games():
-    """Import multiple games from JSON array."""
+    """Import multiple games from JSON array. Skips duplicates by team_a + team_b + kickoff."""
     data = request.get_json()
     if not isinstance(data, list):
         return {"error": "Expected a JSON array"}, 400
-    
+
     imported = 0
+    skipped = 0
     with session_scope() as session:
         for item in data:
             kickoff = item.get("kickoff")
             team_a = item.get("team_a")
             team_b = item.get("team_b")
-            
+
             if not kickoff or not team_a or not team_b:
                 continue
-            
+
+            kickoff_dt = parse_date(kickoff)
+            existing = session.query(Game).filter(
+                Game.team_a == team_a,
+                Game.team_b == team_b,
+                Game.kickoff == kickoff_dt,
+            ).first()
+
+            if existing:
+                skipped += 1
+                continue
+
             game = Game(
-                kickoff=parse_date(kickoff),
+                kickoff=kickoff_dt,
                 team_a=team_a,
                 team_b=team_b,
                 score_a=item.get("score_a"),
@@ -205,8 +217,8 @@ def import_games():
             )
             session.add(game)
             imported += 1
-    
-    return {"imported": imported}
+
+    return {"imported": imported, "skipped": skipped}
 
 
 @app.route("/games/<int:game_id>", methods=["GET", "PUT", "DELETE"])

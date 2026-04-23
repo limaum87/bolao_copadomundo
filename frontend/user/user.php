@@ -83,7 +83,16 @@ if (!$uid) {
                         <h2>⚽ Jogos da Copa</h2>
                         <span id="gamesCount" class="badge badge-success"></span>
                     </div>
+                    <div class="filter-bar" style="display: flex; gap: var(--space-sm); margin-bottom: var(--space-lg); flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-primary filter-btn" data-filter="open" onclick="setFilter('open')">🕐 Próximos jogos</button>
+                        <button class="btn btn-sm btn-outline filter-btn" data-filter="missing" onclick="setFilter('missing')">🎯 Faltam palpites</button>
+                        <button class="btn btn-sm btn-outline filter-btn" data-filter="all" onclick="setFilter('all')">📋 Todos</button>
+                    </div>
                     <div id="gamesGrid" class="games-grid"></div>
+                    <div id="emptyFilterMsg" class="text-center text-muted" style="display: none; padding: var(--space-xl) 0;">
+                        <div style="font-size: 2rem; margin-bottom: var(--space-sm);">🎉</div>
+                        Nenhum jogo encontrado para este filtro.
+                    </div>
                 </section>
 
                 <!-- Scoring Rules -->
@@ -235,6 +244,7 @@ if (!$uid) {
         let gamesData = [];
         let predictionsData = [];
         let scoringConfig = null;
+        let currentFilter = 'open';
 
         // Load scoring config and update rules display
         async function loadScoringConfig() {
@@ -269,11 +279,42 @@ if (!$uid) {
             return new Date(kickoff) > new Date();
         }
 
+        function getFilteredGames() {
+            if (currentFilter === 'open') {
+                return gamesData.filter(g => isGameOpen(g.kickoff));
+            } else if (currentFilter === 'missing') {
+                return gamesData.filter(g => {
+                    const hasPred = predictionsData.some(p => p.game_id === g.id);
+                    return !hasPred && isGameOpen(g.kickoff);
+                });
+            }
+            return gamesData;
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.className = btn.dataset.filter === filter
+                    ? 'btn btn-sm btn-primary filter-btn'
+                    : 'btn btn-sm btn-outline filter-btn';
+            });
+            renderGames();
+        }
+
         function renderGames() {
             const grid = document.getElementById('gamesGrid');
+            const emptyMsg = document.getElementById('emptyFilterMsg');
             grid.innerHTML = '';
 
-            gamesData.forEach(game => {
+            const filtered = getFilteredGames();
+
+            if (filtered.length === 0) {
+                emptyMsg.style.display = 'block';
+            } else {
+                emptyMsg.style.display = 'none';
+            }
+
+            filtered.forEach(game => {
                 const myPred = predictionsData.find(p => p.game_id === game.id);
                 const isOpen = isGameOpen(game.kickoff);
 
@@ -327,8 +368,17 @@ if (!$uid) {
 
             // Update games count
             const openGames = gamesData.filter(g => isGameOpen(g.kickoff)).length;
+            const missingCount = gamesData.filter(g => {
+                const hasPred = predictionsData.some(p => p.game_id === g.id);
+                return !hasPred && isGameOpen(g.kickoff);
+            }).length;
             const predictedCount = predictionsData.length;
-            document.getElementById('gamesCount').textContent = `${openGames} jogos abertos`;
+            const label = currentFilter === 'missing'
+                ? `${missingCount} faltam palpites`
+                : currentFilter === 'open'
+                    ? `${openGames} jogos abertos`
+                    : `${gamesData.length} jogos`;
+            document.getElementById('gamesCount').textContent = label;
 
             const gamesBadge = document.getElementById('gamesStatusBadge');
             gamesBadge.textContent = `${predictedCount} / ${gamesData.length} palpites`;

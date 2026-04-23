@@ -355,7 +355,10 @@ require_once __DIR__ . '/../config.php';
 
                 if (res.ok) {
                     const data = await res.json();
-                    showToast(`✅ ${data.imported} jogos importados!`, 'success');
+                    const msg = data.skipped > 0
+                        ? `✅ ${data.imported} jogos importados, ${data.skipped} duplicatas ignoradas!`
+                        : `✅ ${data.imported} jogos importados!`;
+                    showToast(msg, 'success');
                     loadGames();
                 } else {
                     showToast('Erro ao importar jogos', 'error');
