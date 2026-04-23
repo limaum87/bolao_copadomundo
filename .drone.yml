@@ -22,10 +22,10 @@ steps:
         path: /usr/bin/docker
     commands:
       - cd /opt/infra/apps/bolao_copadomundo
-      - git pull origin master
+      - git pull origin main
       - cd /opt/infra/infra/sites/bolao-site
       - docker compose build
-      - docker compose up -d
+      - docker compose up -d --force-recreate
 
 volumes:
   - name: apps
