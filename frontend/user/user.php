@@ -128,23 +128,19 @@ if (!$uid) {
                         <div class="finals-grid">
                             <div class="final-input-group">
                                 <label class="final-input-label">🥇 Campeão</label>
-                                <input type="text" name="champion" class="final-input" placeholder="Ex: Brasil"
-                                    required>
+                                <select name="champion" class="final-input" required></select>
                             </div>
                             <div class="final-input-group">
                                 <label class="final-input-label">🥈 Vice-campeão</label>
-                                <input type="text" name="runner_up" class="final-input" placeholder="Ex: Argentina"
-                                    required>
+                                <select name="runner_up" class="final-input" required></select>
                             </div>
                             <div class="final-input-group">
                                 <label class="final-input-label">🥉 3º Lugar</label>
-                                <input type="text" name="third_place" class="final-input" placeholder="Ex: França"
-                                    required>
+                                <select name="third_place" class="final-input" required></select>
                             </div>
                             <div class="final-input-group">
                                 <label class="final-input-label">4️⃣ 4º Lugar</label>
-                                <input type="text" name="fourth_place" class="final-input" placeholder="Ex: Alemanha"
-                                    required>
+                                <select name="fourth_place" class="final-input" required></select>
                             </div>
                         </div>
                         <div class="mt-lg text-center">
@@ -245,6 +241,22 @@ if (!$uid) {
         let predictionsData = [];
         let scoringConfig = null;
         let currentFilter = 'open';
+
+        // Populate finals selects with teams from countryCodes
+        function populateFinalsSelects() {
+            const teams = Object.keys(countryCodes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+            const selects = document.querySelectorAll('#finalsForm select');
+            selects.forEach(select => {
+                select.innerHTML = '<option value="">Selecione...</option>' +
+                    teams.map(t => `<option value="${t}">${t}</option>`).join('');
+            });
+        }
+        populateFinalsSelects();
+
+        function setFinalsSelectValue(name, value) {
+            const select = document.querySelector(`#finalsForm [name=${name}]`);
+            if (select && value) select.value = value;
+        }
 
         // Load scoring config and update rules display
         async function loadScoringConfig() {
@@ -385,6 +397,8 @@ if (!$uid) {
             gamesBadge.className = `badge ${predictedCount === gamesData.length ? 'badge-success' : 'badge-warning'}`;
         }
 
+        let currentView = 'dashboard';
+
         // Load data
         async function loadData() {
             try {
@@ -399,9 +413,8 @@ if (!$uid) {
                 const finals = await finalsRes.json();
                 const myFinals = finals[0];
 
-                // Hide loading, show dashboard
+                // Hide loading
                 document.getElementById('loadingState').style.display = 'none';
-                document.getElementById('dashboardSection').style.display = 'block';
 
                 renderGames();
 
@@ -409,8 +422,7 @@ if (!$uid) {
                 const finalsBadge = document.getElementById('finalsStatusBadge');
                 if (myFinals) {
                     ['champion', 'runner_up', 'third_place', 'fourth_place'].forEach(field => {
-                        const input = document.querySelector(`#finalsForm [name=${field}]`);
-                        if (input && myFinals[field]) input.value = myFinals[field];
+                        if (myFinals[field]) setFinalsSelectValue(field, myFinals[field]);
                     });
 
                     const isComplete = myFinals.champion && myFinals.runner_up && myFinals.third_place && myFinals.fourth_place;
@@ -419,6 +431,12 @@ if (!$uid) {
                 } else {
                     finalsBadge.textContent = '⚠️ Pendente';
                     finalsBadge.className = 'badge badge-warning';
+                }
+
+                if (currentView === 'dashboard') {
+                    document.getElementById('dashboardSection').style.display = 'block';
+                } else {
+                    showView(currentView);
                 }
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -535,6 +553,8 @@ if (!$uid) {
 
         // Navigation
         function showView(viewName) {
+            currentView = viewName;
+
             // Hide all views
             document.getElementById('dashboardSection').style.display = 'none';
             document.getElementById('gamesView').style.display = 'none';

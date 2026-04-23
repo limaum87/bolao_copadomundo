@@ -92,6 +92,37 @@ require_once __DIR__ . '/../config.php';
                 </form>
             </div>
 
+            <!-- Tournament Outcome -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">🏆 Resultado Final do Torneio</h3>
+                <p class="text-muted mb-lg">Defina os 4 primeiros lugares para calcular os pontos das previsões de classificação.</p>
+                <form id="tournamentOutcomeForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">🥇 Campeão</label>
+                            <select name="champion" class="form-input"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">🥈 Vice-campeão</label>
+                            <select name="runner_up" class="form-input"></select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">🥉 3º Lugar</label>
+                            <select name="third_place" class="form-input"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">4️⃣ 4º Lugar</label>
+                            <select name="fourth_place" class="form-input"></select>
+                        </div>
+                    </div>
+                    <div style="text-align: right; margin-top: var(--space-md);">
+                        <button type="button" class="btn btn-secondary" onclick="saveOutcome()">💾 Salvar Resultado Final</button>
+                    </div>
+                </form>
+            </div>
+
             <!-- Save Button -->
             <div class="card">
                 <div class="form-row" style="justify-content: flex-end;">
@@ -110,6 +141,7 @@ require_once __DIR__ . '/../config.php';
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
     <script src="/assets/js/toast.js"></script>
 
+    <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const token = localStorage.getItem('admin_token');
@@ -150,6 +182,62 @@ require_once __DIR__ . '/../config.php';
                 }
             });
             return data;
+        }
+
+        function populateOutcomeSelects() {
+            const teams = Object.keys(countryCodes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+            const selects = document.querySelectorAll('#tournamentOutcomeForm select');
+            selects.forEach(select => {
+                select.innerHTML = '<option value="">Selecione...</option>' +
+                    teams.map(t => `<option value="${t}">${t}</option>`).join('');
+            });
+        }
+        populateOutcomeSelects();
+
+        async function loadOutcome() {
+            try {
+                const res = await fetch(`${apiBase}/tournament_outcome`);
+                if (res.ok) {
+                    const data = await res.json();
+                    ['champion', 'runner_up', 'third_place', 'fourth_place'].forEach(field => {
+                        const select = document.querySelector(`#tournamentOutcomeForm [name="${field}"]`);
+                        if (select && data[field]) select.value = data[field];
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading tournament outcome:', error);
+            }
+        }
+
+        async function saveOutcome() {
+            const fields = ['champion', 'runner_up', 'third_place', 'fourth_place'];
+            const data = {};
+            for (const field of fields) {
+                const select = document.querySelector(`#tournamentOutcomeForm [name="${field}"]`);
+                data[field] = select.value || null;
+            }
+
+            try {
+                const res = await fetch(`${apiBase}/tournament_outcome`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    showToast('Resultado final salvo com sucesso!', 'success');
+                } else if (res.status === 401) {
+                    showToast('Sessão expirada. Faça login novamente.', 'error');
+                    setTimeout(() => window.location.href = '/admin/login.php', 1500);
+                } else {
+                    showToast('Erro ao salvar resultado final.', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão.', 'error');
+            }
         }
 
         async function loadConfig() {
@@ -211,6 +299,7 @@ require_once __DIR__ . '/../config.php';
         }
 
         loadConfig();
+        loadOutcome();
     </script>
 </body>
 
