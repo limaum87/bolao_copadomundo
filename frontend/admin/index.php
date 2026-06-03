@@ -78,6 +78,15 @@ require_once __DIR__ . '/../config.php';
                 </div>
             </div>
 
+            <!-- Migration Section -->
+            <div class="card mt-xl">
+                <h3 class="card-title mb-lg">🔧 Correção de Horários (Migration)</h3>
+                <p class="text-muted mb-md">Corrige os horários de 7 jogos que estavam divergentes do site oficial da FIFA.</p>
+                <button type="button" class="btn btn-primary" onclick="fixKickoffs()">
+                    ✅ Aplicar Correção de Horários
+                </button>
+            </div>
+
             <!-- Backup Section -->
             <div class="card mt-xl">
                 <h3 class="card-title mb-lg">💾 Backup do Sistema</h3>
@@ -249,6 +258,35 @@ require_once __DIR__ . '/../config.php';
                 showToast('Erro de conexão', 'error');
             }
         });
+
+        async function fixKickoffs() {
+            if (!confirm('\u26a0\ufe0f Deseja aplicar a corre\u00e7\u00e3o de hor\u00e1rios dos jogos conforme site da FIFA?\n\nIsso atualizar\u00e1 o hor\u00e1rio de 7 jogos.')) return;
+
+            try {
+                const res = await fetch(`${apiBase}/games/fix-kickoffs`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const msg = data.updated.length > 0
+                        ? `\u2705 ${data.updated.length} jogo(s) corrigido(s)! ${data.skipped.length} j\u00e1 estavam corretos.`
+                        : '\u2139\ufe0f Todos os hor\u00e1rios j\u00e1 estavam corretos.';
+                    showToast(msg, 'success');
+                    loadStats();
+                } else if (res.status === 401) {
+                    showToast('\u274c N\u00e3o autorizado. Fa\u00e7a login novamente.', 'error');
+                    logout();
+                } else {
+                    showToast('Erro ao aplicar corre\u00e7\u00e3o', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conex\u00e3o', 'error');
+            }
+        }
 
         loadStats();
 

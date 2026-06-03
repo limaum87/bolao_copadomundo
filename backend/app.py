@@ -627,6 +627,51 @@ def serialize_scoring_config(config: ScoringConfig):
     }
 
 
+@app.route("/games/fix-kickoffs", methods=["POST"])
+@token_required
+def fix_kickoffs():
+    """Apply kickoff corrections to match the official FIFA schedule."""
+    corrections = [
+        {"team_a": "Austrália", "team_b": "Turquia", "kickoff": "2026-06-14T01:00:00"},
+        {"team_a": "Uzbequistão", "team_b": "Colômbia", "kickoff": "2026-06-17T21:00:00"},
+        {"team_a": "Turquia", "team_b": "Paraguai", "kickoff": "2026-06-19T00:00:00"},
+        {"team_a": "Brasil", "team_b": "Haiti", "kickoff": "2026-06-19T21:30:00"},
+        {"team_a": "Tunísia", "team_b": "Japão", "kickoff": "2026-06-20T23:00:00"},
+        {"team_a": "Egito", "team_b": "Irã", "kickoff": "2026-06-27T00:00:00"},
+        {"team_a": "Nova Zelândia", "team_b": "Bélgica", "kickoff": "2026-06-27T00:00:00"},
+    ]
+
+    updated = []
+    skipped = []
+
+    with session_scope() as session:
+        for fix in corrections:
+            game = session.query(Game).filter(
+                Game.team_a == fix["team_a"],
+                Game.team_b == fix["team_b"],
+            ).first()
+
+            if not game:
+                skipped.append({"match": f"{fix['team_a']} x {fix['team_b']}", "reason": "not found"})
+                continue
+
+            old_kickoff = game.kickoff.isoformat() if game.kickoff else None
+            new_kickoff_dt = datetime.fromisoformat(fix["kickoff"])
+
+            if game.kickoff == new_kickoff_dt:
+                skipped.append({"match": f"{fix['team_a']} x {fix['team_b']}", "reason": "already correct"})
+                continue
+
+            game.kickoff = new_kickoff_dt
+            updated.append({
+                "match": f"{fix['team_a']} x {fix['team_b']}",
+                "old_kickoff": old_kickoff,
+                "new_kickoff": fix["kickoff"],
+            })
+
+    return {"updated": updated, "skipped": skipped, "total": len(corrections)}
+
+
 def parse_date(value: str) -> datetime:
     if isinstance(value, datetime):
         return value
