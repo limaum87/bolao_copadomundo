@@ -6,13 +6,23 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
-from .database import engine, session_scope
+from .database import engine, session_scope, DATABASE_URL
 from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome, AdminUser, ScoringConfig
 from .scoring import calculate_scores, score_prediction, get_scoring_config_dict
 
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = (BASE_DIR / "data.db").resolve()
+# Derive DB_PATH from the same DATABASE_URL used by the ORM
+def _db_path_from_url(url: str) -> Path:
+    """Convert sqlite:///path/to/db or sqlite:///path to a filesystem Path."""
+    if url.startswith("sqlite:///"):
+        p = url[len("sqlite:///" ):]
+        if not os.path.isabs(p):
+            p = os.path.join(os.getcwd(), p)
+        return Path(p)
+    return Path(url)
+
+
+DB_PATH = _db_path_from_url(DATABASE_URL)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dev_secret_key_change_in_prod'
