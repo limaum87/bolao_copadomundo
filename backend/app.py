@@ -24,6 +24,20 @@ def ensure_db_exists():
     os.makedirs(DB_PATH.parent, exist_ok=True)
     Base.metadata.create_all(engine)
 
+    # Auto-migrate: add finals_deadline column if missing
+    import sqlite3
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(scoring_config)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'finals_deadline' not in columns:
+            cursor.execute('ALTER TABLE scoring_config ADD COLUMN finals_deadline DATETIME')
+            conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 
 # Create tables at import time
 with app.app_context():
@@ -416,7 +430,7 @@ def finals_predictions():
 
         # Check finals deadline
         config = session.query(ScoringConfig).get(1)
-        if config and config.finals_deadline:
+        if config and getattr(config, 'finals_deadline', None):
             if datetime.utcnow() > config.finals_deadline:
                 return {"error": "O prazo para palpites finais já encerrou."}, 400
 
@@ -639,7 +653,7 @@ def serialize_scoring_config(config: ScoringConfig):
         "runner_up": config.runner_up,
         "third_place": config.third_place,
         "fourth_place": config.fourth_place,
-        "finals_deadline": config.finals_deadline.isoformat() if config.finals_deadline else None,
+        "finals_deadline": config.finals_deadline.isoformat() if getattr(config, 'finals_deadline', None) else None,
     }
 
 
