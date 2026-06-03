@@ -268,6 +268,31 @@ if (!$uid) {
                     document.getElementById('ruleExactScore').textContent = `${scoringConfig.exact_score} pontos`;
                     document.getElementById('ruleCorrectResult').textContent = `${scoringConfig.correct_result} pontos`;
                     document.getElementById('rulePartialScore').textContent = `${scoringConfig.partial_score} pontos`;
+
+                    // Check finals deadline
+                    if (scoringConfig.finals_deadline) {
+                        const deadline = new Date(scoringConfig.finals_deadline);
+                        const now = new Date();
+                        const isExpired = now > deadline;
+                        const finalsForm = document.getElementById('finalsForm');
+                        const finalsSection = document.getElementById('finalsSection');
+
+                        if (isExpired) {
+                            // Disable form
+                            finalsForm.querySelectorAll('select, button').forEach(el => el.disabled = true);
+                            const warning = document.createElement('div');
+                            warning.className = 'alert alert-error text-center mt-md';
+                            warning.textContent = `⏰ O prazo para palpites finais encerrou em ${deadline.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'})}.`;
+                            finalsSection.querySelector('.finals-grid').after(warning);
+                        } else {
+                            // Show countdown hint
+                            const hint = document.createElement('div');
+                            hint.className = 'text-muted text-center mt-md';
+                            hint.style.fontSize = '0.85rem';
+                            hint.textContent = `⏰ Prazo: ${deadline.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'})}`;
+                            finalsSection.querySelector('.finals-grid').after(hint);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('Error loading scoring config:', error);

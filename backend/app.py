@@ -414,6 +414,12 @@ def finals_predictions():
         if not participant:
             return {"error": "Participant not found"}, 404
 
+        # Check finals deadline
+        config = session.query(ScoringConfig).get(1)
+        if config and config.finals_deadline:
+            if datetime.utcnow() > config.finals_deadline:
+                return {"error": "O prazo para palpites finais já encerrou."}, 400
+
         record = (
             session.query(FinalsPrediction)
             .filter_by(participant_id=participant.id)
@@ -543,6 +549,15 @@ def scoring_config():
                 if not isinstance(value, int) or value < 0:
                     return {"error": f"{field} must be a non-negative integer"}, 400
                 setattr(config, field, value)
+        if "finals_deadline" in data:
+            value = data["finals_deadline"]
+            if value is None or value == "":
+                config.finals_deadline = None
+            else:
+                try:
+                    config.finals_deadline = parse_date(value)
+                except (ValueError, TypeError):
+                    return {"error": "Invalid finals_deadline format. Use ISO 8601."}, 400
         return jsonify(serialize_scoring_config(config))
 
 
@@ -624,6 +639,7 @@ def serialize_scoring_config(config: ScoringConfig):
         "runner_up": config.runner_up,
         "third_place": config.third_place,
         "fourth_place": config.fourth_place,
+        "finals_deadline": config.finals_deadline.isoformat() if config.finals_deadline else None,
     }
 
 

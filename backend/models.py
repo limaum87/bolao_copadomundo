@@ -92,6 +92,7 @@ class ScoringConfig(Base):
     runner_up = Column(Integer, nullable=False, default=15)
     third_place = Column(Integer, nullable=False, default=10)
     fourth_place = Column(Integer, nullable=False, default=10)
+    finals_deadline = Column(DateTime, nullable=True)
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

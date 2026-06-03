@@ -92,6 +92,21 @@ require_once __DIR__ . '/../config.php';
                 </form>
             </div>
 
+            <!-- Finals Deadline -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">⏰ Prazo para Palpites Finais</h3>
+                <p class="text-muted mb-lg">Defina até quando os participantes podem enviar seus palpites de classificação final (campeão, vice, etc.). Deixe vazio para sem prazo.</p>
+                <form id="finalsDeadlineForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">📅 Data/Hora Limite</label>
+                            <input type="datetime-local" name="finals_deadline" class="form-input">
+                            <small class="text-muted">Quando expirar, os palpites finais ficam bloqueados para todos</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
             <!-- Tournament Outcome -->
             <div class="card mb-xl">
                 <h3 class="card-title mb-lg">🏆 Resultado Final do Torneio</h3>
@@ -169,6 +184,15 @@ require_once __DIR__ . '/../config.php';
                     input.value = config[field];
                 }
             });
+
+            // Fill finals deadline
+            const deadlineInput = document.querySelector('input[name="finals_deadline"]');
+            if (deadlineInput && config.finals_deadline) {
+                // Convert ISO to datetime-local format (YYYY-MM-DDTHH:MM)
+                const d = new Date(config.finals_deadline);
+                const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+                deadlineInput.value = local.toISOString().slice(0, 16);
+            }
         }
 
         function getFormData() {
@@ -181,6 +205,13 @@ require_once __DIR__ . '/../config.php';
                     data[field] = parseInt(input.value, 10);
                 }
             });
+
+            // Include finals deadline
+            const deadlineInput = document.querySelector('input[name="finals_deadline"]');
+            if (deadlineInput) {
+                data.finals_deadline = deadlineInput.value || null;
+            }
+
             return data;
         }
 
