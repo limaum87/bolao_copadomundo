@@ -90,6 +90,33 @@ require_once __DIR__ . '/../config.php';
         </div>
     </main>
 
+    <!-- Edit Participant Modal -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h4 class="modal-title">✏️ Editar Participante</h4>
+                <button type="button" class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" name="edit_id" id="editId">
+                    <div class="form-group">
+                        <label class="form-label">Nome *</label>
+                        <input type="text" name="edit_name" id="editName" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email (opcional)</label>
+                        <input type="email" name="edit_email" id="editEmail" class="form-input">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeEditModal()">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">💾 Salvar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Predictions Modal -->
     <div id="predictionsModal" class="modal-overlay">
         <div class="modal" style="max-width: 800px;">
@@ -178,6 +205,9 @@ require_once __DIR__ . '/../config.php';
                             </td>
                             <td>
                                 <div class="flex gap-sm">
+                                    <button class="btn btn-sm btn-outline" onclick="openEditModal(${p.id}, '${p.name}', '${p.email || ''}')">
+                                        ✏️
+                                    </button>
                                     <button class="btn btn-sm btn-secondary" onclick="viewPredictions(${p.id}, '${p.uid}', '${p.name}')">
                                         👁️ Palpites
                                     </button>
@@ -328,6 +358,57 @@ require_once __DIR__ . '/../config.php';
             } catch (error) {
                 showToast('Erro de conexão', 'error');
             }
+        });
+
+        // Edit participant modal
+        const editModal = document.getElementById('editModal');
+
+        function openEditModal(id, name, email) {
+            document.getElementById('editId').value = id;
+            document.getElementById('editName').value = name;
+            document.getElementById('editEmail').value = email;
+            editModal.classList.add('active');
+            document.getElementById('editName').focus();
+        }
+
+        function closeEditModal() {
+            editModal.classList.remove('active');
+        }
+
+        async function saveEdit() {
+            const id = document.getElementById('editId').value;
+            const name = document.getElementById('editName').value.trim();
+            const email = document.getElementById('editEmail').value.trim() || null;
+
+            if (!name) {
+                showToast('Nome é obrigatório', 'warning');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${apiBase}/participants/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ name, email })
+                });
+
+                if (res.ok) {
+                    showToast('✅ Participante atualizado!', 'success');
+                    closeEditModal();
+                    loadParticipants();
+                } else {
+                    showToast('Erro ao atualizar participante', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        }
+
+        editModal.addEventListener('click', (e) => {
+            if (e.target === editModal) closeEditModal();
         });
 
         // Delete participant
