@@ -29,7 +29,7 @@ if (!$uid) {
                     <h1>Bolão Copa 2026</h1>
                     <span class="header-subtitle">Seus palpites para a Copa do Mundo</span>
                 </div>
-                <div class="badge badge-info" style="background: rgba(255,255,255,0.2); color: white;">
+                <div class="badge badge-info" style="background: rgba(255,255,255,0.2); color: white;" id="participantBadge">
                     🎯 Participante: <?= htmlspecialchars($uid) ?>
                 </div>
             </div>
@@ -237,6 +237,7 @@ if (!$uid) {
     <script>
         const apiBase = '<?= $apiBase ?>';
         const uid = '<?= $uid ?>';
+        let participantName = '';
         let gamesData = [];
         let predictionsData = [];
         let scoringConfig = null;
@@ -653,7 +654,25 @@ if (!$uid) {
             if (e.target === breakdownModal) closeBreakdownModal();
         });
 
+        // Load participant name
+        async function loadParticipantName() {
+            try {
+                const res = await fetch(`${apiBase}/scores`);
+                if (res.ok) {
+                    const scores = await res.json();
+                    const me = scores.find(s => s.uid === uid);
+                    if (me) {
+                        participantName = me.name;
+                        document.getElementById('participantBadge').innerHTML = `🎯 <strong>${participantName}</strong>`;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading participant name:', error);
+            }
+        }
+
         // Initialize
+        loadParticipantName();
         loadData();
     </script>
 </body>
