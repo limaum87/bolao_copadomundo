@@ -391,7 +391,7 @@ def predictions():
         if not game:
             return {"error": "Game not found"}, 404
 
-        if game.kickoff <= datetime.utcnow():
+        if game.kickoff <= datetime.now():
             return {"error": "Predictions are closed for this game"}, 400
 
         existing = (
@@ -441,7 +441,7 @@ def finals_predictions():
         # Check finals deadline
         config = session.query(ScoringConfig).get(1)
         if config and getattr(config, 'finals_deadline', None):
-            if datetime.utcnow() > config.finals_deadline:
+            if datetime.now() > config.finals_deadline:
                 return {"error": "O prazo para palpites finais já encerrou."}, 400
 
         record = (
