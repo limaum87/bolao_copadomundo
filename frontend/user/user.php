@@ -39,6 +39,11 @@ if (!$uid) {
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
+            <!-- Live Match Card -->
+            <div id="liveCard" class="live-card" style="display: none;">
+                <div id="liveCardContent"></div>
+            </div>
+
             <!-- Loading State -->
             <div id="loadingState" class="loading-container">
                 <div class="spinner"></div>
@@ -678,6 +683,98 @@ if (!$uid) {
         breakdownModal.addEventListener('click', (e) => {
             if (e.target === breakdownModal) closeBreakdownModal();
         });
+
+        // ---- Live Match Card ----
+        function liveTeamHtml(name) {
+            // Versão simplificada para o card ao vivo: bandeira + nome empilhados verticalmente
+            const flagUrl = getFlagUrl(name);
+            if (flagUrl) {
+                return `<div class="live-team">
+                    <img src="${flagUrl}" alt="${name}" class="team-flag">
+                    <span class="team-name">${name}</span>
+                </div>`;
+            }
+            return `<div class="live-team"><span class="team-name">${name}</span></div>`;
+        }
+
+        async function loadLiveCard() {
+            try {
+                const res = await fetch(`${apiBase}/live`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const card = document.getElementById('liveCard');
+                const content = document.getElementById('liveCardContent');
+
+                const liveGames = data.live || [];
+                const nextGame = data.next || null;
+
+                if (liveGames.length > 0) {
+                    // Jogo AO VIVO — mostra placar + palpites
+                    const g = liveGames[0];
+                    const preds = g.predictions || [];
+                    let predsHtml = '';
+                    if (preds.length > 0) {
+                        predsHtml = `<div class="live-predictions">
+                            <div class="live-predictions-title">🎯 Palpites do Bolão</div>
+                            <div class="live-predictions-grid">
+                                ${preds.map(p => `
+                                    <div class="live-prediction-item">
+                                        <span class="live-prediction-name">${p.participant_name}</span>
+                                        <span class="live-prediction-score">${p.goals_a} × ${p.goals_b}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>`;
+                    } else {
+                        predsHtml = '<div class="text-muted text-center" style="padding: 8px; font-size: 0.85rem;">Nenhum palpite ainda</div>';
+                    }
+
+                    content.innerHTML = `
+                        <div class="live-header">
+                            <span class="live-badge-live">🔴 AO VIVO</span>
+                            <span class="live-clock">${g.clock || ''}</span>
+                        </div>
+                        <div class="live-score-section">
+                            ${liveTeamHtml(g.home)}
+                            <div class="live-score-box">
+                                <span class="live-score-num">${g.score_a}</span>
+                                <span class="live-score-x">×</span>
+                                <span class="live-score-num">${g.score_b}</span>
+                            </div>
+                            ${liveTeamHtml(g.away)}
+                        </div>
+                        ${predsHtml}
+                    `;
+                    card.className = 'live-card live-card-active';
+                    card.style.display = 'block';
+                } else if (nextGame) {
+                    // Sem jogo ao vivo — mostra próximo
+                    content.innerHTML = `
+                        <div class="live-header">
+                            <span class="live-badge-next">⏳ PRÓXIMO JOGO</span>
+                        </div>
+                        <div class="live-score-section">
+                            ${liveTeamHtml(nextGame.home)}
+                            <div class="live-score-box">
+                                <span class="live-score-x">×</span>
+                            </div>
+                            ${liveTeamHtml(nextGame.away)}
+                        </div>
+                        <div class="live-next-detail">${nextGame.detail || ''}</div>
+                    `;
+                    card.className = 'live-card live-card-next';
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading live card:', error);
+            }
+        }
+
+        // Refresh live card every 60 seconds
+        loadLiveCard();
+        setInterval(loadLiveCard, 60000);
 
         // Load participant name
         async function loadParticipantName() {

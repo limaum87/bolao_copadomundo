@@ -74,6 +74,9 @@ require_once __DIR__ . '/../config.php';
                             onclick="document.getElementById('importFile').click()">
                             📥 Importar JSON
                         </button>
+                        <button class="btn btn-sm btn-success" onclick="syncResults()" id="syncBtn">
+                            🔄 Sincronizar ESPN
+                        </button>
                         <button class="btn btn-sm btn-danger" onclick="deleteAllGames()">
                             🗑️ Apagar Todos
                         </button>
@@ -502,8 +505,37 @@ require_once __DIR__ . '/../config.php';
             }
         });
 
+        // Sync ESPN Results
+        async function syncResults() {
+            const btn = document.getElementById('syncBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Sincronizando...';
+            try {
+                const res = await fetch(`${apiBase}/sync`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const updated = data.updated || 0;
+                    const total = data.total_checked || 0;
+                    if (updated > 0) {
+                        showToast(`🔄 ${updated} resultado(s) atualizado(s) da ESPN!`, 'success');
+                    } else {
+                        showToast(`✅ Nenhum resultado novo (${total} jogo(s) verificado(s))`, 'info');
+                    }
+                    loadGames();
+                } else {
+                    showToast('Erro ao sincronizar com ESPN', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão com a ESPN', 'error');
+            }
+            btn.disabled = false;
+            btn.textContent = '🔄 Sincronizar ESPN';
+        }
+
         loadGames();
-    </script>
 </body>
 
 </html>

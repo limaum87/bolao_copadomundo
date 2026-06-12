@@ -1,5 +1,8 @@
 import os
+import sys
 import jwt
+import subprocess
+import logging
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -717,6 +720,176 @@ def parse_date(value: str) -> datetime:
         return value
     return datetime.fromisoformat(value)
 
+
+
+@app.route("/sync", methods=["POST"])
+@token_required
+def sync_results():
+    """Dispara sincronização de resultados via ESPN API."""
+    from .sync_results import fetch_espn_games, parse_espn_event, TEAM_MAP
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    all_results = []
+
+    with session_scope() as session:
+        bolao_games = session.query(Game).all()
+
+        for d in [yesterday, today]:
+            try:
+                espn_events = fetch_espn_games(d)
+            except Exception as e:
+                all_results.append({"date": d, "error": str(e)})
+                continue
+
+            for event in espn_events:
+                parsed = parse_espn_event(event)
+                if not parsed or not parsed.get("is_full_time"):
+                    continue
+
+                home_pt = parsed["home"]["name_pt"]
+                away_pt = parsed["away"]["name_pt"]
+
+                # Find matching game
+                match = None
+                for g in bolao_games:
+                    if g.score_a is not None:
+                        continue
+                    if (g.team_a == home_pt and g.team_b == away_pt) or \
+                       (g.team_a == away_pt and g.team_b == home_pt):
+                        match = g
+                        break
+
+                if not match:
+                    all_results.append({
+                        "status": "not_found",
+                        "home": home_pt,
+                        "away": away_pt,
+                    })
+                    continue
+
+                # Determine scores in bolão order
+                if match.team_a == home_pt:
+                    score_a = parsed["home"]["score"]
+                    score_b = parsed["away"]["score"]
+                else:
+                    score_a = parsed["away"]["score"]
+                    score_b = parsed["home"]["score"]
+
+                match.score_a = score_a
+                match.score_b = score_b
+
+                all_results.append({
+                    "status": "updated",
+                    "game_id": match.id,
+                    "home": match.team_a,
+                    "away": match.team_b,
+                    "score_a": score_a,
+                    "score_b": score_b,
+                })
+
+    updated = sum(1 for r in all_results if r.get("status") == "updated")
+    return {
+        "status": "ok",
+        "updated": updated,
+        "total_checked": len(all_results),
+        "results": all_results,
+    }
+
+
+@app.route("/live")
+def live_matches():
+    """Endpoint público: retorna jogos ao vivo e próximo jogo da ESPN."""
+    from .sync_results import fetch_espn_games, parse_espn_event
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    live_games = []
+    next_game = None
+
+    for d in [today, tomorrow]:
+        try:
+            espn_events = fetch_espn_games(d)
+        except Exception:
+            continue
+
+        for event in espn_events:
+            parsed = parse_espn_event(event)
+            if not parsed:
+                continue
+
+            # Traduz detail para português
+            detail_pt = parsed["detail"]
+            if parsed["state"] == "pre" and parsed.get("date"):
+                try:
+                    from datetime import timezone as _tz
+                    dt = datetime.fromisoformat(parsed["date"].replace("Z", "+00:00"))
+                    local_dt = dt.astimezone(_tz(timedelta(hours=-3)))  # Brasília
+                    dias = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+                    dia = dias[local_dt.weekday()]
+                    detail_pt = f"{dia}, {local_dt.strftime('%d/%m %H:%M')}"
+                except Exception:
+                    detail_pt = parsed["detail"]
+            elif parsed["state"] == "post":
+                detail_pt = "Finalizado"
+
+            game_info = {
+                "home": parsed["home"]["name_pt"],
+                "home_flag": parsed["home"]["name_pt"],
+                "away": parsed["away"]["name_pt"],
+                "away_flag": parsed["away"]["name_pt"],
+                "score_a": parsed["home"]["score"],
+                "score_b": parsed["away"]["score"],
+                "state": parsed["state"],
+                "clock": parsed["display_clock"],
+                "detail": detail_pt,
+                "date": parsed.get("date", ""),
+            }
+
+            if parsed["state"] == "in":
+                live_games.append(game_info)
+            elif parsed["state"] == "pre" and next_game is None:
+                next_game = game_info
+            elif parsed["state"] == "post" and parsed["is_full_time"]:
+                # Inclui jogos finalizados de hoje também (últimas 3h)
+                pass
+
+        if live_games:
+            break  # Se já tem jogos ao vivo, não precisa de amanhã
+
+    # Busca palpites do jogo ao vivo (se houver)
+    predictions_for_live = []
+    with session_scope() as session:
+        for lg in live_games:
+            # Encontra o game_id no bolão
+            game = session.query(Game).filter(
+                ((Game.team_a == lg["home"]) & (Game.team_b == lg["away"])) |
+                ((Game.team_a == lg["away"]) & (Game.team_b == lg["home"]))
+            ).first()
+            if game:
+                lg["game_id"] = game.id
+                # Busca TODOS os palpites deste jogo
+                preds = session.query(Prediction).filter_by(game_id=game.id).all()
+                for p in preds:
+                    participant = session.query(Participant).get(p.participant_id)
+                    # Ajusta placar conforme ordem do bolão
+                    if game.team_a == lg["home"]:
+                        ga, gb = p.goals_a, p.goals_b
+                    else:
+                        ga, gb = p.goals_b, p.goals_a
+                    predictions_for_live.append({
+                        "participant_name": participant.name if participant else "?",
+                        "goals_a": ga,
+                        "goals_b": gb,
+                    })
+                lg["predictions"] = predictions_for_live
+
+    return {
+        "live": live_games,
+        "next": next_game,
+    }
 
 
 if __name__ == "__main__":

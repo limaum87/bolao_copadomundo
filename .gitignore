@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 backend/data.db
 .venv/
+
+# Sync secrets
+backend/.env.sync
