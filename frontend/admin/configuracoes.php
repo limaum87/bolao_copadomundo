@@ -154,10 +154,10 @@ require_once __DIR__ . '/../config.php';
 
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
-    <script src="/assets/js/toast.js"></script>
-    <script src="/assets/js/admin-auth.js"></script>
+    <script src="/assets/js/toast.js?v=202606121643"></script>
+    <script src="/assets/js/admin-auth.js?v=202606121643"></script>
 
-    <script src="/assets/js/flags.js"></script>
+    <script src="/assets/js/flags.js?v=202606121643"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const token = getAdminToken();

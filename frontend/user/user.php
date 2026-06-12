@@ -236,9 +236,9 @@ if (!$uid) {
 
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
-    <script src="/assets/js/toast.js"></script>
+    <script src="/assets/js/toast.js?v=202606121643"></script>
 
-    <script src="/assets/js/flags.js"></script>
+    <script src="/assets/js/flags.js?v=202606121643"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const uid = '<?= $uid ?>';
