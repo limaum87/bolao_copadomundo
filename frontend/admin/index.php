@@ -308,14 +308,6 @@ require_once __DIR__ . '/../config.php';
 
         loadStats();
         loadQuickScore();
-                } else {
-                    showToast('Erro ao importar backup', 'error');
-                }
-            } catch (error) {
-                showToast('Erro de conexão', 'error');
-            }
-        });
-
 
         // Change Password Logic
         const changePasswordModal = document.getElementById('changePasswordModal');
