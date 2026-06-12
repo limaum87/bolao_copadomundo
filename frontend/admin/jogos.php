@@ -181,13 +181,10 @@ require_once __DIR__ . '/../config.php';
     <script src="/assets/js/flags.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
     <script src="/assets/js/toast.js"></script>
+    <script src="/assets/js/admin-auth.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
-        const token = localStorage.getItem('admin_token');
-
-        if (!token) {
-            window.location.href = '/admin/login.php';
-        }
+        const token = getAdminToken();
 
         function formatDate(isoString) {
             const date = new Date(isoString);

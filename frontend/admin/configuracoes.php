@@ -155,15 +155,12 @@ require_once __DIR__ . '/../config.php';
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
     <script src="/assets/js/toast.js"></script>
+    <script src="/assets/js/admin-auth.js"></script>
 
     <script src="/assets/js/flags.js"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
-        const token = localStorage.getItem('admin_token');
-
-        if (!token) {
-            window.location.href = '/admin/login.php';
-        }
+        const token = getAdminToken();
 
         const DEFAULTS = {
             exact_score: 10,
@@ -261,8 +258,8 @@ require_once __DIR__ . '/../config.php';
                 if (res.ok) {
                     showToast('Resultado final salvo com sucesso!', 'success');
                 } else if (res.status === 401) {
-                    showToast('Sessão expirada. Faça login novamente.', 'error');
-                    setTimeout(() => window.location.href = '/admin/login.php', 1500);
+                    // 401 já é tratado automaticamente pelo admin-auth.js
+                    return;
                 } else {
                     showToast('Erro ao salvar resultado final.', 'error');
                 }
@@ -310,8 +307,8 @@ require_once __DIR__ . '/../config.php';
                 if (res.ok) {
                     showToast('Configurações salvas com sucesso!', 'success');
                 } else if (res.status === 401) {
-                    showToast('Sessão expirada. Faça login novamente.', 'error');
-                    setTimeout(() => window.location.href = '/admin/login.php', 1500);
+                    // 401 já é tratado automaticamente pelo admin-auth.js
+                    return;
                 } else {
                     const err = await res.json();
                     showToast(err.error || 'Erro ao salvar configurações.', 'error');

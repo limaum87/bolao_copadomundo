@@ -146,6 +146,7 @@ require_once __DIR__ . '/../config.php';
     <!-- Alert Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
     <script src="/assets/js/toast.js"></script>
+    <script src="/assets/js/admin-auth.js"></script>
 
     <!-- Change Password Modal -->
     <div id="changePasswordModal" class="modal-overlay">
@@ -172,15 +173,10 @@ require_once __DIR__ . '/../config.php';
 
     <script>
         const apiBase = '<?= $apiBase ?>';
-        const token = localStorage.getItem('admin_token');
-
-        if (!token) {
-            window.location.href = '/admin/login.php';
-        }
+        const token = getAdminToken();
 
         function logout() {
-            localStorage.removeItem('admin_token');
-            window.location.href = '/admin/login.php';
+            adminLogout();
         }
 
         async function loadStats() {
@@ -278,8 +274,8 @@ require_once __DIR__ . '/../config.php';
                     showToast(msg, 'success');
                     loadStats();
                 } else if (res.status === 401) {
-                    showToast('\u274c N\u00e3o autorizado. Fa\u00e7a login novamente.', 'error');
-                    logout();
+                    // 401 já é tratado automaticamente pelo admin-auth.js
+                    return;
                 } else {
                     showToast('Erro ao aplicar corre\u00e7\u00e3o', 'error');
                 }
