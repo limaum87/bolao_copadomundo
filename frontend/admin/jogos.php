@@ -536,6 +536,7 @@ require_once __DIR__ . '/../config.php';
         }
 
         loadGames();
+    </script>
 </body>
 
 </html>
