@@ -11,7 +11,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121643">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121841">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -146,10 +146,10 @@ require_once __DIR__ . '/../config.php';
 
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
-    <script src="/assets/js/toast.js?v=202606121643"></script>
-    <script src="/assets/js/admin-auth.js?v=202606121643"></script>
+    <script src="/assets/js/toast.js?v=202606121841"></script>
+    <script src="/assets/js/admin-auth.js?v=202606121841"></script>
 
-    <script src="/assets/js/flags.js?v=202606121643"></script>
+    <script src="/assets/js/flags.js?v=202606121841"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const frontendBase = window.location.origin + '/user/';

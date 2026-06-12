@@ -11,7 +11,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121643">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121841">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -78,34 +78,12 @@ require_once __DIR__ . '/../config.php';
                 </div>
             </div>
 
-            <!-- Migration Section -->
-            <div class="card mt-xl">
-                <h3 class="card-title mb-lg">🔧 Correção de Horários (Migration)</h3>
-                <p class="text-muted mb-md">Corrige os horários de 7 jogos que estavam divergentes do site oficial da FIFA.</p>
-                <button type="button" class="btn btn-primary" onclick="fixKickoffs()">
-                    ✅ Aplicar Correção de Horários
-                </button>
-            </div>
-
-            <!-- Backup Section -->
-            <div class="card mt-xl">
-                <h3 class="card-title mb-lg">💾 Backup do Sistema</h3>
-                <div class="form-row">
-                    <div>
-                        <a href="<?= $apiBase ?>/backup/export" class="btn btn-secondary btn-block" download>
-                            📥 Exportar Backup
-                        </a>
-                        <p class="text-muted mt-sm" style="font-size: 0.875rem;">Download do banco de dados SQLite</p>
-                    </div>
-                    <div>
-                        <form id="importForm" enctype="multipart/form-data">
-                            <input type="file" name="file" id="backupFile" accept=".sqlite,.db" style="display: none;">
-                            <button type="button" class="btn btn-outline btn-block"
-                                onclick="document.getElementById('backupFile').click()">
-                                📤 Importar Backup
-                            </button>
-                            <p class="text-muted mt-sm" style="font-size: 0.875rem;">Restaurar de um arquivo .sqlite</p>
-                        </form>
+            <!-- Quick Score Update -->
+            <div class="card mt-xl" id="quickScoreCard" style="display:none;">
+                <h3 class="card-title mb-lg">⚡ Resultado do Jogo</h3>
+                <div id="quickScoreContent" class="quick-score-content">
+                    <div class="quick-score-loading" style="text-align:center; padding:20px;">
+                        <div class="spinner" style="margin:0 auto;"></div>
                     </div>
                 </div>
             </div>
@@ -144,9 +122,10 @@ require_once __DIR__ . '/../config.php';
     </div>
 
     <!-- Alert Toast -->
+    <script src="/assets/js/flags.js?v=202606121841"></script>
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
-    <script src="/assets/js/toast.js?v=202606121643"></script>
-    <script src="/assets/js/admin-auth.js?v=202606121643"></script>
+    <script src="/assets/js/toast.js?v=202606121841"></script>
+    <script src="/assets/js/admin-auth.js?v=202606121841"></script>
 
     <!-- Change Password Modal -->
     <div id="changePasswordModal" class="modal-overlay">
@@ -227,26 +206,108 @@ require_once __DIR__ . '/../config.php';
             }
         }
 
-        // Backup import
-        document.getElementById('backupFile').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
 
-            const formData = new FormData();
-            formData.append('file', file);
+        // Quick Score - load current/upcoming games
+        async function loadQuickScore() {
+            try {
+                const res = await fetch(`${apiBase}/games`);
+                const games = await res.json();
+                const now = new Date();
+
+                // Find games that already started (kickoff passed) but have no score yet
+                let candidates = games.filter(g => new Date(g.kickoff) <= now && g.score_a === null);
+
+                // Also include games happening today that already have scores (for editing)
+                const todayStr = now.toISOString().slice(0, 10);
+                const todayGames = games.filter(g => g.kickoff.startsWith(todayStr));
+
+                let displayGames = [];
+                if (candidates.length > 0) {
+                    displayGames = candidates.slice(-3).reverse();
+                } else if (todayGames.length > 0) {
+                    displayGames = todayGames.slice(-3).reverse();
+                } else {
+                    return;
+                }
+
+                const card = document.getElementById('quickScoreCard');
+                card.style.display = 'block';
+
+                const container = document.getElementById('quickScoreContent');
+                container.innerHTML = displayGames.map(game => {
+                    const hasScore = game.score_a !== null && game.score_b !== null;
+                    return `
+                        <div class="quick-score-game" data-game-id="${game.id}">
+                            <div class="quick-score-teams">
+                                <div class="quick-score-team">
+                                    ${getTeamHtml(game.team_a)}
+                                    <input type="number" class="quick-score-input" data-side="a" min="0" max="99"
+                                        value="${hasScore ? game.score_a : ''}" placeholder="-">
+                                </div>
+                                <span class="quick-score-vs">×</span>
+                                <div class="quick-score-team">
+                                    ${getTeamHtml(game.team_b)}
+                                    <input type="number" class="quick-score-input" data-side="b" min="0" max="99"
+                                        value="${hasScore ? game.score_b : ''}" placeholder="-">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-block quick-score-save" onclick="saveQuickScore(${game.id}, this)">
+                                💾 Salvar
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading quick score:', error);
+            }
+        }
+
+        async function saveQuickScore(gameId, btn) {
+            const gameEl = btn.closest('.quick-score-game');
+            const inputA = gameEl.querySelector('[data-side="a"]');
+            const inputB = gameEl.querySelector('[data-side="b"]');
+            const scoreA = parseInt(inputA.value, 10);
+            const scoreB = parseInt(inputB.value, 10);
+
+            if (isNaN(scoreA) || isNaN(scoreB)) {
+                showToast('Preencha ambos os placares', 'warning');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Salvando...';
 
             try {
-                const res = await fetch(`${apiBase}/backup/import`, {
-                    method: 'POST',
+                const res = await fetch(`${apiBase}/games/${gameId}`, {
+                    method: 'PUT',
                     headers: {
+                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: formData
+                    body: JSON.stringify({ score_a: scoreA, score_b: scoreB })
                 });
 
                 if (res.ok) {
-                    showToast('✅ Backup importado com sucesso!', 'success');
-                    loadStats();
+                    showToast('✅ Placar atualizado!', 'success');
+                    btn.textContent = '✅ Salvo!';
+                    setTimeout(() => loadQuickScore(), 1500);
+                } else if (res.status === 401) {
+                    return;
+                } else {
+                    showToast('Erro ao atualizar placar', 'error');
+                    btn.disabled = false;
+                    btn.textContent = '💾 Salvar';
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+                btn.disabled = false;
+                btn.textContent = '💾 Salvar';
+            }
+        }
+
+        loadStats();
+        loadQuickScore();
                 } else {
                     showToast('Erro ao importar backup', 'error');
                 }
@@ -255,36 +316,6 @@ require_once __DIR__ . '/../config.php';
             }
         });
 
-        async function fixKickoffs() {
-            if (!confirm('\u26a0\ufe0f Deseja aplicar a corre\u00e7\u00e3o de hor\u00e1rios dos jogos conforme site da FIFA?\n\nIsso atualizar\u00e1 o hor\u00e1rio de 7 jogos.')) return;
-
-            try {
-                const res = await fetch(`${apiBase}/games/fix-kickoffs`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    const msg = data.updated.length > 0
-                        ? `\u2705 ${data.updated.length} jogo(s) corrigido(s)! ${data.skipped.length} j\u00e1 estavam corretos.`
-                        : '\u2139\ufe0f Todos os hor\u00e1rios j\u00e1 estavam corretos.';
-                    showToast(msg, 'success');
-                    loadStats();
-                } else if (res.status === 401) {
-                    // 401 já é tratado automaticamente pelo admin-auth.js
-                    return;
-                } else {
-                    showToast('Erro ao aplicar corre\u00e7\u00e3o', 'error');
-                }
-            } catch (error) {
-                showToast('Erro de conex\u00e3o', 'error');
-            }
-        }
-
-        loadStats();
 
         // Change Password Logic
         const changePasswordModal = document.getElementById('changePasswordModal');
@@ -331,34 +362,6 @@ require_once __DIR__ . '/../config.php';
         });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeChangePasswordModal();
-        });
-
-        // Update export link with token (needs to be handled differently since it's a link)
-        // Actually, for download links, we can't easily add headers. 
-        // We might need to use fetch and blob, or pass token in query param (less secure but easier).
-        // Let's stick to fetch and blob for security.
-        document.querySelector('a[href*="/backup/export"]').addEventListener('click', async (e) => {
-            e.preventDefault();
-            try {
-                const res = await fetch(`${apiBase}/backup/export`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = "bolao_backup.sqlite";
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    a.remove();
-                } else {
-                    showToast('Erro ao exportar backup', 'error');
-                }
-            } catch (error) {
-                showToast('Erro de conexão', 'error');
-            }
         });
 
         // Score Breakdown

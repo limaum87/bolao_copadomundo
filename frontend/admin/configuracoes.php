@@ -11,7 +11,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121643">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121841">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -138,6 +138,38 @@ require_once __DIR__ . '/../config.php';
                 </form>
             </div>
 
+            <!-- Migration Section -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">🔧 Correção de Horários (Migration)</h3>
+                <p class="text-muted mb-md">Corrige os horários de 7 jogos que estavam divergentes do site oficial da FIFA.</p>
+                <button type="button" class="btn btn-primary" onclick="fixKickoffs()">
+                    ✅ Aplicar Correção de Horários
+                </button>
+            </div>
+
+            <!-- Backup Section -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">💾 Backup do Sistema</h3>
+                <div class="form-row">
+                    <div>
+                        <button type="button" class="btn btn-secondary btn-block" onclick="exportBackup()">
+                            📥 Exportar Backup
+                        </button>
+                        <p class="text-muted mt-sm" style="font-size: 0.875rem;">Download do banco de dados SQLite</p>
+                    </div>
+                    <div>
+                        <form id="importForm" enctype="multipart/form-data">
+                            <input type="file" name="file" id="backupFile" accept=".sqlite,.db" style="display: none;">
+                            <button type="button" class="btn btn-outline btn-block"
+                                onclick="document.getElementById('backupFile').click()">
+                                📤 Importar Backup
+                            </button>
+                            <p class="text-muted mt-sm" style="font-size: 0.875rem;">Restaurar de um arquivo .sqlite</p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <!-- Save Button -->
             <div class="card">
                 <div class="form-row" style="justify-content: flex-end;">
@@ -154,10 +186,10 @@ require_once __DIR__ . '/../config.php';
 
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
-    <script src="/assets/js/toast.js?v=202606121643"></script>
-    <script src="/assets/js/admin-auth.js?v=202606121643"></script>
+    <script src="/assets/js/toast.js?v=202606121841"></script>
+    <script src="/assets/js/admin-auth.js?v=202606121841"></script>
 
-    <script src="/assets/js/flags.js?v=202606121643"></script>
+    <script src="/assets/js/flags.js?v=202606121841"></script>
     <script>
         const apiBase = '<?= $apiBase ?>';
         const token = getAdminToken();
@@ -328,6 +360,86 @@ require_once __DIR__ . '/../config.php';
 
         loadConfig();
         loadOutcome();
+
+        // Fix Kickoffs
+        async function fixKickoffs() {
+            if (!confirm('\u26a0\ufe0f Deseja aplicar a corre\u00e7\u00e3o de hor\u00e1rios dos jogos conforme site da FIFA?\n\nIsso atualizar\u00e1 o hor\u00e1rio de 7 jogos.')) return;
+
+            try {
+                const res = await fetch(`${apiBase}/games/fix-kickoffs`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const msg = data.updated.length > 0
+                        ? `\u2705 ${data.updated.length} jogo(s) corrigido(s)! ${data.skipped.length} j\u00e1 estavam corretos.`
+                        : '\u2139\ufe0f Todos os hor\u00e1rios j\u00e1 estavam corretos.';
+                    showToast(msg, 'success');
+                } else if (res.status === 401) {
+                    return;
+                } else {
+                    showToast('Erro ao aplicar corre\u00e7\u00e3o', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conex\u00e3o', 'error');
+            }
+        }
+
+        // Backup Export
+        async function exportBackup() {
+            try {
+                const res = await fetch(`${apiBase}/backup/export`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "bolao_backup.sqlite";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                    showToast('✅ Backup exportado!', 'success');
+                } else {
+                    showToast('Erro ao exportar backup', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        }
+
+        // Backup Import
+        document.getElementById('backupFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch(`${apiBase}/backup/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                if (res.ok) {
+                    showToast('✅ Backup importado com sucesso!', 'success');
+                } else {
+                    showToast('Erro ao importar backup', 'error');
+                }
+            } catch (error) {
+                showToast('Erro de conexão', 'error');
+            }
+        });
     </script>
 </body>
 
