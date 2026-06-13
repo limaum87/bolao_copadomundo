@@ -207,25 +207,31 @@ require_once __DIR__ . '/../config.php';
         }
 
 
-        // Quick Score - load current/upcoming games
+        // Quick Score - mostra os jogos do DIA para o admin atualizar ao vivo
         async function loadQuickScore() {
             try {
                 const res = await fetch(`${apiBase}/games`);
                 const games = await res.json();
                 const now = new Date();
 
-                // Find games that already started (kickoff passed) but have no score yet
-                let candidates = games.filter(g => new Date(g.kickoff) <= now && g.score_a === null);
+                // "Hoje" no fuso LOCAL (o kickoff é salvo em hora local, não UTC).
+                // Antes usávamos toISOString(), que rola a data à meia-noite UTC (21h
+                // no Brasil/GMT-3): ao salvar o placar à noite o jogo deixava de ser
+                // candidato e o fallback não casava por causa do fuso -> card sumia.
+                const todayStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD local
 
-                // Also include games happening today that already have scores (for editing)
-                const todayStr = now.toISOString().slice(0, 10);
-                const todayGames = games.filter(g => g.kickoff.startsWith(todayStr));
+                // Jogos do dia: sempre mostrados, COM ou SEM placar, para o admin
+                // ir atualizando conforme os gols saem (permanecem após salvar).
+                const todayGames = games.filter(g => (g.kickoff || '').startsWith(todayStr));
+
+                // Fallback: jogos já iniciados e sem placar, caso não haja jogo hoje.
+                const startedNoScore = games.filter(g => new Date(g.kickoff) <= now && g.score_a === null);
 
                 let displayGames = [];
-                if (candidates.length > 0) {
-                    displayGames = candidates.slice(-3).reverse();
-                } else if (todayGames.length > 0) {
-                    displayGames = todayGames.slice(-3).reverse();
+                if (todayGames.length > 0) {
+                    displayGames = todayGames.slice(-4).reverse();
+                } else if (startedNoScore.length > 0) {
+                    displayGames = startedNoScore.slice(-3).reverse();
                 } else {
                     return;
                 }
