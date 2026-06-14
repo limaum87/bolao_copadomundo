@@ -3,6 +3,8 @@ import sys
 import jwt
 import subprocess
 import logging
+import threading
+import time as _time_module
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -55,6 +57,202 @@ def ensure_db_exists():
 # Create tables at import time
 with app.app_context():
     ensure_db_exists()
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync scheduler (a cada hora) — SÓ jogos que já começaram
+# ---------------------------------------------------------------------------
+# REGRA CRÍTICA de segurança: o sync automático NUNCA atualiza jogos
+# futuros, para nunca alterar palpites ainda abertos dos usuários.
+# Só toca em jogos cujo kickoff já passou (ao vivo ou no passado).
+# ---------------------------------------------------------------------------
+
+SYNC_INTERVAL_SECONDS = int(os.environ.get("BOLAO_SYNC_INTERVAL", "3600"))
+_sync_log = logging.getLogger("bolao.sync")
+_sync_started = False
+
+
+def _do_sync(now=None):
+    """
+    Executa sincronização ESPN → banco.
+
+    Proteções (em ordem):
+      1. Só jogos finalizados segundo a ESPN (is_full_time = FT/AET/PEN)
+      2. 🔒 Só jogos cujo kickoff <= now (NUNCA jogos futuros)
+
+    Comportamento de placar (modo "corrige ao fim"):
+      - Jogo sem placar no bolão  → grava o placar final da ESPN
+      - Jogo com placar que DIFERE do final da ESPN → SOBRESCREVE
+        (corrige placares provisórios gravados por engano durante o jogo)
+      - Jogo com placar igual ao final da ESPN → mantém
+
+    Jogos futuros nunca são tocados: nunca têm is_full_time e o filtro
+    de kickoff <= now também os blinda.
+
+    Estratégia de datas: coleta todas as datas distintas de jogos
+    passados (com buffer de -1 dia para tolerar diferença de fuso entre
+    o kickoff salvo em Brasília e o horário UTC da ESPN).
+
+    Retorna a lista de resultados (dicts).
+    """
+    from .sync_results import fetch_espn_games, parse_espn_event
+
+    now = now or datetime.now()
+
+    # 1. Snapshot read-only dos jogos (serializa para usar fora da sessão)
+    with session_scope() as session:
+        bolao_games = [
+            {
+                "id": g.id,
+                "team_a": g.team_a,
+                "team_b": g.team_b,
+                "kickoff": g.kickoff,
+                "score_a": g.score_a,
+                "score_b": g.score_b,
+                "matched": False,  # flag p/ não casar o mesmo jogo 2x
+            }
+            for g in session.query(Game).all()
+        ]
+
+    # 2. Coleta datas de jogos passados (com ou sem placar — podemos
+    #    corrigir placares provisórios gravados durante o jogo).
+    # Buffer de 1 dia antes para cobrir diferença de fuso UTC vs Brasília.
+    dates_to_check = set()
+    for g in bolao_games:
+        if g["kickoff"] is None or g["kickoff"] > now:
+            continue  # 🔒 jogo futuro — nunca tocar
+        day = g["kickoff"].date()
+        dates_to_check.add(day.strftime("%Y-%m-%d"))
+        dates_to_check.add((day - timedelta(days=1)).strftime("%Y-%m-%d"))
+
+    all_results = []
+    if not dates_to_check:
+        return all_results
+
+    # 3. Coleta atualizações a fazer (fora de qualquer sessão)
+    updates = []  # (game_id, score_a, score_b, team_a, team_b)
+    for d in sorted(dates_to_check):
+        try:
+            espn_events = fetch_espn_games(d)
+        except Exception as e:
+            all_results.append({"date": d, "error": str(e)})
+            continue
+
+        for event in espn_events:
+            parsed = parse_espn_event(event)
+            if not parsed or not parsed.get("is_full_time"):
+                continue
+
+            home_pt = parsed["home"]["name_pt"]
+            away_pt = parsed["away"]["name_pt"]
+
+            match = None
+            for g in bolao_games:
+                # 🔒 PROTEÇÃO CRÍTICA: só jogos que já começaram.
+                # Jogos futuros (kickoff > agora) são IGNORADOS para
+                # nunca alterar palpites ainda abertos dos usuários.
+                if g["kickoff"] is None or g["kickoff"] > now:
+                    continue
+                if g.get("matched"):
+                    continue  # já casou com outro evento ESPN
+                if (g["team_a"] == home_pt and g["team_b"] == away_pt) or \
+                   (g["team_a"] == away_pt and g["team_b"] == home_pt):
+                    match = g
+                    g["matched"] = True
+                    break
+
+            if not match:
+                all_results.append({
+                    "status": "not_found",
+                    "home": home_pt,
+                    "away": away_pt,
+                })
+                continue
+
+            # Determine scores in bolão order
+            if match["team_a"] == home_pt:
+                score_a = parsed["home"]["score"]
+                score_b = parsed["away"]["score"]
+            else:
+                score_a = parsed["away"]["score"]
+                score_b = parsed["home"]["score"]
+
+            # Decisão: o placar no bolão bate com o final da ESPN?
+            cur_a, cur_b = match["score_a"], match["score_b"]
+            if cur_a == score_a and cur_b == score_b:
+                # Já está correto — nada a fazer
+                all_results.append({
+                    "status": "already_correct",
+                    "game_id": match["id"],
+                })
+                continue
+
+            # Precisa gravar: novo placar (cur_a is None) OU correção
+            # de placar provisório gravado durante o jogo.
+            was_corrected = cur_a is not None
+            updates.append((match["id"], score_a, score_b, match["team_a"], match["team_b"], was_corrected))
+            # Atualiza snapshot para não reprocessar entre datas
+            match["score_a"] = score_a
+            match["score_b"] = score_b
+
+    # 4. Aplica as atualizações numa sessão nova (double-check de concorrência)
+    if updates:
+        with session_scope() as session:
+            for game_id, score_a, score_b, team_a, team_b, was_corrected in updates:
+                game = session.get(Game, game_id)
+                if not game:
+                    continue
+                # 🔒 Re-confirma proteção temporal: nunca jogos futuros
+                if game.kickoff is None or game.kickoff > now:
+                    continue
+                # Só grava se for diferente do estado atual do banco
+                # (pode ter mudado entre o snapshot e aqui)
+                if game.score_a == score_a and game.score_b == score_b:
+                    continue
+                game.score_a = score_a
+                game.score_b = score_b
+                all_results.append({
+                    "status": "corrected" if was_corrected else "updated",
+                    "game_id": game_id,
+                    "home": team_a,
+                    "away": team_b,
+                    "score_a": score_a,
+                    "score_b": score_b,
+                })
+
+    return all_results
+
+
+def start_sync_scheduler():
+    """Inicia o scheduler de sync em background. Idempotente por processo."""
+    global _sync_started
+    if _sync_started:
+        return
+    _sync_started = True
+
+    def _loop():
+        _time_module.sleep(15)  # espera o app ficar pronto
+        while True:
+            try:
+                _sync_log.info("⏰ [scheduler] iniciando sync horário")
+                results = _do_sync()
+                updated = sum(1 for r in results if r.get("status") == "updated")
+                corrected = sum(1 for r in results if r.get("status") == "corrected")
+                not_found = sum(1 for r in results if r.get("status") == "not_found")
+                _sync_log.info(
+                    "⏰ [scheduler] sync concluído: %d novo(s), %d corrigido(s), %d não encontrado(s)",
+                    updated, corrected, not_found,
+                )
+            except Exception as e:
+                _sync_log.error("⏰ [scheduler] erro no sync: %s", e)
+            _time_module.sleep(SYNC_INTERVAL_SECONDS)
+
+    t = threading.Thread(target=_loop, daemon=True, name="bolao-sync-scheduler")
+    t.start()
+    _sync_log.info("⏰ Scheduler de sync horário iniciado (intervalo=%ds)", SYNC_INTERVAL_SECONDS)
+
+
+start_sync_scheduler()
 
 
 @app.route("/health")
@@ -752,70 +950,12 @@ def parse_date(value: str) -> datetime:
 @app.route("/sync", methods=["POST"])
 @token_required
 def sync_results():
-    """Dispara sincronização de resultados via ESPN API."""
-    from .sync_results import fetch_espn_games, parse_espn_event, TEAM_MAP
+    """Dispara sincronização de resultados via ESPN API.
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    all_results = []
-
-    with session_scope() as session:
-        bolao_games = session.query(Game).all()
-
-        for d in [yesterday, today]:
-            try:
-                espn_events = fetch_espn_games(d)
-            except Exception as e:
-                all_results.append({"date": d, "error": str(e)})
-                continue
-
-            for event in espn_events:
-                parsed = parse_espn_event(event)
-                if not parsed or not parsed.get("is_full_time"):
-                    continue
-
-                home_pt = parsed["home"]["name_pt"]
-                away_pt = parsed["away"]["name_pt"]
-
-                # Find matching game
-                match = None
-                for g in bolao_games:
-                    if g.score_a is not None:
-                        continue
-                    if (g.team_a == home_pt and g.team_b == away_pt) or \
-                       (g.team_a == away_pt and g.team_b == home_pt):
-                        match = g
-                        break
-
-                if not match:
-                    all_results.append({
-                        "status": "not_found",
-                        "home": home_pt,
-                        "away": away_pt,
-                    })
-                    continue
-
-                # Determine scores in bolão order
-                if match.team_a == home_pt:
-                    score_a = parsed["home"]["score"]
-                    score_b = parsed["away"]["score"]
-                else:
-                    score_a = parsed["away"]["score"]
-                    score_b = parsed["home"]["score"]
-
-                match.score_a = score_a
-                match.score_b = score_b
-
-                all_results.append({
-                    "status": "updated",
-                    "game_id": match.id,
-                    "home": match.team_a,
-                    "away": match.team_b,
-                    "score_a": score_a,
-                    "score_b": score_b,
-                })
-
+    Usa a mesma lógica do scheduler automático — só atualiza jogos
+    finalizados cujo kickoff já passou (nunca jogos futuros).
+    """
+    all_results = _do_sync()
     updated = sum(1 for r in all_results if r.get("status") == "updated")
     return {
         "status": "ok",
