@@ -90,7 +90,10 @@ require_once __DIR__ . '/../config.php';
 
             <!-- Ranking Preview -->
             <div class="card mt-xl">
-                <h3 class="card-title mb-lg">🏆 Ranking Atual</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;" class="mb-lg">
+                    <h3 class="card-title" style="margin:0;">🏆 Ranking Atual</h3>
+                    <a href="<?= htmlspecialchars($apiBase) ?>/ranking" target="_blank" rel="noopener" class="btn btn-sm btn-outline">🔗 JSON /ranking</a>
+                </div>
                 <div id="rankingContainer">
                     <div class="loading-container">
                         <div class="spinner"></div>
