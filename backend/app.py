@@ -509,6 +509,33 @@ def scores():
         return jsonify(results)
 
 
+@app.route("/ranking", methods=["GET"])
+def ranking():
+    """Ranking simplificado: apenas nome e pontuação, do maior para o menor."""
+    with session_scope() as session:
+        participants = session.query(Participant).all()
+        games = session.query(Game).all()
+        predictions = session.query(Prediction).all()
+        finals_predictions = session.query(FinalsPrediction).all()
+        outcome = session.query(TournamentOutcome).get(1)
+        config = session.query(ScoringConfig).get(1)
+        scoring_cfg = get_scoring_config_dict(config)
+
+        results = calculate_scores(
+            participants=participants,
+            games=games,
+            predictions=predictions,
+            finals_predictions=finals_predictions,
+            outcome=outcome,
+            scoring_cfg=scoring_cfg,
+        )
+        # calculate_scores já ordena por pontos (desc) e nome (asc)
+        return jsonify([
+            {"name": item["name"], "points": item["total_points"]}
+            for item in results
+        ])
+
+
 @app.route("/scores/<int:participant_id>/details", methods=["GET"])
 def score_details(participant_id: int):
     with session_scope() as session:
