@@ -12,6 +12,7 @@ services:
       - FLASK_APP=backend.app
       - FLASK_ENV=development
       - DATABASE_URL=sqlite:////app/backend/data.db
+      - TZ=America/Sao_Paulo
       # Web Push (VAPID) — gere com: docker compose exec backend python -m backend.generate_vapid
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
