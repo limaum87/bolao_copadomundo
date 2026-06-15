@@ -29,6 +29,10 @@
     window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
         deferredPrompt = e;
+        // Sinaliza para outros scripts (install-prompt.js) que o prompt
+        // nativo já está disponível, evitando perder o evento se o listener
+        // for registrado depois.
+        window.__bolaoInstallable = true;
         window.dispatchEvent(new CustomEvent('pwa:installable'));
     });
 

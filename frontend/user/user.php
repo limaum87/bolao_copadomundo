@@ -44,7 +44,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606151400">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606151700">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -67,6 +67,30 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
+            <!-- Install app banner (Android/Desktop: prompt nativo / iOS: tutorial) -->
+            <div id="installBanner" class="push-banner" style="display:none;">
+                <div class="push-banner-inner">
+                    <div class="push-banner-text">
+                        <strong>📲 Instale o Bolão na tela inicial</strong>
+                        <span id="installBannerSub">Acesse rápido pelo ícone, como um app de verdade.</span>
+                    </div>
+                    <div class="push-banner-actions">
+                        <button id="installBtn" type="button" class="btn btn-sm" style="display:none;">Instalar</button>
+                        <button id="iosInstallBtn" type="button" class="btn btn-sm" style="display:none;">Como instalar</button>
+                        <button id="installDismiss" type="button" class="push-banner-close" aria-label="Fechar">✕</button>
+                    </div>
+                </div>
+                <div id="iosTutorial" class="install-tutorial" style="display:none;">
+                    <ol>
+                        <li>Toque no botão <strong>Compartilhar</strong>
+                            <svg class="share-glyph" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 6v9M9 9l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            na barra do navegador.</li>
+                        <li>Role a lista e escolha <strong>Adicionar à Tela de Início</strong>.</li>
+                        <li>Confirme em <strong>Adicionar</strong>. Pronto! 🎉</li>
+                    </ol>
+                </div>
+            </div>
+
             <!-- Live Match Card -->
             <div id="liveCard" class="live-card" style="display: none;">
                 <div id="liveCardContent"></div>
@@ -265,6 +289,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
     <!-- Toast -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.js"></script>
     <script src="/assets/js/toast.js?v=202606121841"></script>
+    <script src="/assets/js/install-prompt.js?v=202606151700" defer></script>
 
     <script src="/assets/js/flags.js?v=202606121841"></script>
     <script>

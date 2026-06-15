@@ -1516,3 +1516,28 @@ a:hover {
     padding: var(--space-sm) var(--space-lg);
     border-radius: var(--radius-full);
 }
+
+/* Tutorial de instalação (iOS) — dentro do banner .push-banner */
+.install-tutorial {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+}
+.install-tutorial ol {
+    margin: 0;
+    padding-left: 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+.install-tutorial li strong {
+    color: var(--color-yellow);
+}
+.install-tutorial .share-glyph {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 2px;
+    color: var(--color-white);
+}
