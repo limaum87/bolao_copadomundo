@@ -1186,6 +1186,24 @@ def push_test():
     return {"sent": sent, "total": total}
 
 
+@app.route("/push/subscriptions", methods=["GET"])
+@token_required
+def push_subscriptions():
+    """Lista a contagem de inscrições de push por participant_uid (admin).
+
+    Útil para o admin saber quais participantes ativaram as notificações.
+    Retorna: { "<uid>": <n_dispositivos>, ... }
+    """
+    from sqlalchemy import func as _func
+    with session_scope() as session:
+        rows = (
+            session.query(PushSubscription.participant_uid, _func.count(PushSubscription.id))
+            .group_by(PushSubscription.participant_uid)
+            .all()
+        )
+    return jsonify({uid: cnt for uid, cnt in rows})
+
+
 if __name__ == "__main__":
     ensure_db_exists()
     app.run(debug=True, host="0.0.0.0", port=5000)

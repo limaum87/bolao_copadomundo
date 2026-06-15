@@ -23,7 +23,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121841">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606151400">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -166,20 +166,28 @@ require_once __DIR__ . '/../config.php';
         const apiBase = '<?= $apiBase ?>';
         const frontendBase = window.location.origin + '/user/';
         const token = getAdminToken();
+        let participantMap = {};
 
         async function loadParticipants() {
             try {
-                const [pRes, gRes, sRes] = await Promise.all([
+                const [pRes, gRes, sRes, pushRes] = await Promise.all([
                     fetch(`${apiBase}/participants`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     }),
                     fetch(`${apiBase}/games`),
-                    fetch(`${apiBase}/scores`)
+                    fetch(`${apiBase}/scores`),
+                    fetch(`${apiBase}/push/subscriptions`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
                 ]);
 
                 const participants = await pRes.json();
                 const games = await gRes.json();
                 const scores = await sRes.json();
+                const pushSubs = pushRes.ok ? await pushRes.json() : {};
+
+                participantMap = {};
+                participants.forEach(p => { participantMap[p.uid] = p; });
 
                 const totalGames = games.length;
 
@@ -191,11 +199,15 @@ require_once __DIR__ . '/../config.php';
                     const score = scores.find(s => s.id === p.id);
                     const predicted = score ? score.games_predicted : 0;
                     const progressClass = predicted === totalGames ? 'badge-success' : 'badge-warning';
+                    const subs = pushSubs[p.uid] || 0;
+                    const notifBadge = subs > 0
+                        ? `<span class="badge badge-success" title="${subs} dispositivo(s) com notificações ativas" style="margin-left:6px;">🔔 ${subs}</span>`
+                        : `<span class="text-muted" title="Sem notificações ativas" style="margin-left:6px;">🔕</span>`;
 
                     return `
                         <tr>
                             <td>${p.id}</td>
-                            <td><strong>${p.name}</strong></td>
+                            <td><strong>${p.name}</strong>${notifBadge}</td>
                             <td>${p.email || '<span class="text-muted">-</span>'}</td>
                             <td>
                                 <span class="badge ${progressClass}">
@@ -219,6 +231,9 @@ require_once __DIR__ . '/../config.php';
                                     </button>
                                     <button class="btn btn-sm btn-secondary" onclick="viewPredictions(${p.id}, '${p.uid}', '${p.name}')">
                                         👁️ Palpites
+                                    </button>
+                                    <button class="btn btn-sm btn-outline" onclick="sendTestNotification('${p.uid}', this)" title="Enviar notificação de teste">
+                                        🔔
                                     </button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteParticipant(${p.id})">
                                         🗑️
@@ -433,6 +448,42 @@ require_once __DIR__ . '/../config.php';
                 loadParticipants();
             } catch (error) {
                 showToast('Erro ao remover participante', 'error');
+            }
+        }
+
+        // Envia uma notificação push de teste para um participante específico
+        async function sendTestNotification(uid, btn) {
+            const p = participantMap[uid] || {};
+            const name = p.name || 'participante';
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳';
+            try {
+                const res = await fetch(`${apiBase}/push/test`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        participant_uid: uid,
+                        title: '🔔 Teste do Bolão',
+                        body: `Olá ${name}! Esta é uma notificação de teste do bolão.`
+                    })
+                });
+                const data = await res.json();
+                if (data.sent > 0) {
+                    showToast(`✅ Notificação enviada para ${name} (${data.sent} dispositivo${data.sent > 1 ? 's' : ''}).`, 'success');
+                } else if (data.total === 0) {
+                    showToast(`⚠️ ${name} não ativou as notificações. Peça para abrir o link dele e tocar em "Ativar".`, 'warning');
+                } else {
+                    showToast(`⚠️ Não foi possível entregar a notificação para ${name}.`, 'warning');
+                }
+            } catch (error) {
+                showToast('Erro ao enviar notificação', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = original;
             }
         }
 

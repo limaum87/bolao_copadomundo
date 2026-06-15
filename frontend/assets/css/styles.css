@@ -1504,14 +1504,15 @@ a:hover {
 }
 
 .push-active-indicator {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--space-xs);
+    width: max-content;
+    margin: var(--space-xl) auto 0;
     background: rgba(72, 187, 120, 0.12);
     color: var(--color-success);
     font-size: var(--font-size-sm);
     font-weight: 600;
-    padding: var(--space-xs) var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
     border-radius: var(--radius-full);
-    margin-bottom: var(--space-md);
 }

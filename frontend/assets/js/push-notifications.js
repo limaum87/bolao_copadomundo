@@ -142,7 +142,7 @@
         ind.id = 'pushActiveIndicator';
         ind.className = 'push-active-indicator';
         ind.innerHTML = '🔔 Notificações ativas';
-        root.insertBefore(ind, root.firstChild);
+        root.appendChild(ind); // no rodapé do conteúdo (não cobre o card ao vivo)
     }
 
     async function onEnableClick() {
