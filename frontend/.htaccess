@@ -16,3 +16,8 @@ AddType application/manifest+json .webmanifest
 <FilesMatch "\.(md|txt|json|db|sqlite|env|sh)$">
     Require all denied
 </FilesMatch>
+
+# Manifest dinâmico: /manifest.webmanifest é gerado por manifest.php,
+# que define o start_url do PWA por participante (cookie bolao_uid).
+RewriteEngine On
+RewriteRule ^manifest\.webmanifest$ manifest.php [L]

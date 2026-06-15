@@ -5,6 +5,22 @@ $uid = trim($uid, '/');
 if (!$uid) {
     die('UID não informado');
 }
+
+// Memoriza o participante para que o PWA (app instalado) abra direto no
+// perfil dele, em vez da landing page. O cookie alimenta o start_url
+// dinâmico do manifest.webmanifest (ver manifest.php).
+if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
+    $isHttps = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') == 443)
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    setcookie('bolao_uid', $uid, [
+        'expires'  => time() + 31536000, // 1 ano
+        'path'     => '/',
+        'secure'   => $isHttps,
+        'httponly' => false,
+        'samesite' => 'Lax',
+    ]);
+}
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -254,6 +270,8 @@ if (!$uid) {
     <script>
         const apiBase = '<?= $apiBase ?>';
         const uid = '<?= $uid ?>';
+        // Guarda o uid localmente para o redirecionamento do PWA na landing page.
+        try { localStorage.setItem('bolao_uid', uid); } catch (e) {}
         let participantName = '';
         let gamesData = [];
         let predictionsData = [];

@@ -11,6 +11,23 @@ require_once __DIR__ . '/config.php';
     <meta name="theme-color" content="#009739">
     <meta name="color-scheme" content="light">
     <link rel="manifest" href="/manifest.webmanifest">
+    <!-- PWA: se aberto como app instalado e já sabemos o perfil do participante,
+         redireciona direto para o perfil em vez de mostrar a landing page. -->
+    <script>
+    (function () {
+        try {
+            var standalone = window.matchMedia('(display-mode: standalone)').matches
+                || window.navigator.standalone === true;
+            if (!standalone) return;
+            var uid = localStorage.getItem('bolao_uid');
+            if (!uid) {
+                var m = document.cookie.match(/(?:^|;\s*)bolao_uid=([A-Za-z0-9]{6,128})/);
+                if (m) uid = m[1];
+            }
+            if (uid) location.replace('/user/' + encodeURIComponent(uid));
+        } catch (e) {}
+    })();
+    </script>
     <link rel="icon" href="/assets/img/favicon.ico" sizes="any">
     <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
