@@ -12,7 +12,8 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from .database import engine, session_scope, DATABASE_URL
-from .models import Base, FinalsPrediction, Game, Participant, Prediction, TournamentOutcome, AdminUser, ScoringConfig
+from .models import (AdminUser, Base, FinalsPrediction, Game, NotificationLog,
+                    Participant, Prediction, PushSubscription, ScoringConfig, TournamentOutcome)
 from .scoring import calculate_scores, score_prediction, get_scoring_config_dict
 
 
@@ -243,6 +244,13 @@ def start_sync_scheduler():
                     "⏰ [scheduler] sync concluído: %d novo(s), %d corrigido(s), %d não encontrado(s)",
                     updated, corrected, not_found,
                 )
+                try:
+                    from .notifications import dispatch_result_notifications
+                    n = dispatch_result_notifications(results)
+                    if n.get("sent"):
+                        _sync_log.info("🔔 [scheduler] notificações de resultado: %s", n)
+                except Exception as ne:
+                    _sync_log.error("🔔 [scheduler] erro ao notificar resultados: %s", ne)
             except Exception as e:
                 _sync_log.error("⏰ [scheduler] erro no sync: %s", e)
             _time_module.sleep(SYNC_INTERVAL_SECONDS)
@@ -253,6 +261,41 @@ def start_sync_scheduler():
 
 
 start_sync_scheduler()
+
+
+# ---------------------------------------------------------------------------
+# Auto-notification scheduler (a cada N min) — lembretes de palpite
+# ---------------------------------------------------------------------------
+NOTIFY_INTERVAL_SECONDS = int(os.environ.get("BOLAO_NOTIFY_INTERVAL", "300"))
+_notify_started = False
+
+
+def start_notification_scheduler():
+    """Idempotente por processo. Dispara lembretes de palpite para jogos
+    próximos (configurável via BOLAO_REMINDER_WINDOW_MIN)."""
+    global _notify_started
+    if _notify_started:
+        return
+    _notify_started = True
+
+    def _loop():
+        _time_module.sleep(30)  # dá tempo do app/banco ficarem prontos
+        while True:
+            try:
+                from .notifications import dispatch_pregame_reminders
+                result = dispatch_pregame_reminders()
+                if result.get("sent"):
+                    _sync_log.info("🔔 [notify] lembretes enviados: %s", result)
+            except Exception as e:
+                _sync_log.error("🔔 [notify] erro nos lembretes: %s", e)
+            _time_module.sleep(NOTIFY_INTERVAL_SECONDS)
+
+    t = threading.Thread(target=_loop, daemon=True, name="bolao-notify-scheduler")
+    t.start()
+    _sync_log.info("🔔 Scheduler de notificações iniciado (intervalo=%ds)", NOTIFY_INTERVAL_SECONDS)
+
+
+start_notification_scheduler()
 
 
 @app.route("/health")
@@ -957,9 +1000,16 @@ def sync_results():
     """
     all_results = _do_sync()
     updated = sum(1 for r in all_results if r.get("status") == "updated")
+    notified = 0
+    try:
+        from .notifications import dispatch_result_notifications
+        notified = dispatch_result_notifications(all_results).get("sent", 0)
+    except Exception as ne:
+        _sync_log.error("🔔 [sync] erro ao notificar resultados: %s", ne)
     return {
         "status": "ok",
         "updated": updated,
+        "notified": notified,
         "total_checked": len(all_results),
         "results": all_results,
     }
@@ -1057,6 +1107,83 @@ def live_matches():
         "live": live_games,
         "next": next_game,
     }
+
+
+# ---------------------------------------------------------------------------
+# Web Push — notificações no celular/navegador (VAPID)
+# ---------------------------------------------------------------------------
+@app.route("/push/vapid-public")
+def push_vapid_public():
+    """Chave pública VAPID (vai para o navegador) + se o push está habilitado."""
+    from .notifications import get_vapid_public_key, is_push_enabled
+    return jsonify({"enabled": is_push_enabled(), "publicKey": get_vapid_public_key()})
+
+
+@app.route("/push/subscribe", methods=["POST"])
+def push_subscribe():
+    """Salva/atualiza uma inscrição de push atrelada ao participant_uid.
+
+    Body: { participant_uid, subscription: { endpoint, keys: {p256dh, auth} } }
+    """
+    data = request.get_json(silent=True) or {}
+    uid = data.get("participant_uid")
+    subscription = data.get("subscription") or {}
+    endpoint = subscription.get("endpoint")
+    keys = subscription.get("keys") or {}
+    if not uid or not endpoint:
+        return {"error": "participant_uid and subscription.endpoint are required"}, 400
+
+    ua = (request.headers.get("User-Agent") or "")[:255]
+    with session_scope() as session:
+        existing = session.query(PushSubscription).filter_by(endpoint=endpoint).first()
+        if existing:
+            existing.participant_uid = uid
+            existing.p256dh = keys.get("p256dh")
+            existing.auth_key = keys.get("auth")
+            existing.user_agent = ua
+        else:
+            session.add(PushSubscription(
+                participant_uid=uid,
+                endpoint=endpoint,
+                p256dh=keys.get("p256dh"),
+                auth_key=keys.get("auth"),
+                user_agent=ua,
+            ))
+    return {"status": "subscribed"}
+
+
+@app.route("/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    """Remove uma inscrição (por endpoint)."""
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get("endpoint")
+    if not endpoint:
+        return {"error": "endpoint is required"}, 400
+    with session_scope() as session:
+        session.query(PushSubscription).filter_by(endpoint=endpoint).delete()
+    return {"status": "unsubscribed"}
+
+
+@app.route("/push/test", methods=["POST"])
+@token_required
+def push_test():
+    """Envia uma notificação de teste (admin only).
+
+    Body opcional: { participant_uid, title, body } — sem participant_uid,
+    faz broadcast para todos os inscritos.
+    """
+    from .notifications import broadcast_to_all, notify_uid
+
+    data = request.get_json(silent=True) or {}
+    uid = data.get("participant_uid")
+    title = data.get("title") or "🔔 Teste de notificação"
+    body = data.get("body") or "Se você está vendo isto, as notificações funcionam! 🎉"
+    with session_scope() as session:
+        if uid:
+            sent, total = notify_uid(session, uid, title, body, url=f"/user/{uid}")
+        else:
+            sent, total = broadcast_to_all(session, title, body, url="/")
+    return {"sent": sent, "total": total}
 
 
 if __name__ == "__main__":

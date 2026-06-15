@@ -7,7 +7,7 @@
 //
 // Bump de versão: troque CACHE abaixo quando atualizar o shell.
 
-const CACHE = 'bolao-shell-v1';
+const CACHE = 'bolao-shell-v2';
 
 const CORE_ASSETS = [
     '/',
@@ -99,4 +99,54 @@ self.addEventListener('fetch', (event) => {
 // Permite que a página force a ativação imediata após update.
 self.addEventListener('message', (event) => {
     if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ---------------------------------------------------------------------------
+// Web Push — notificações no celular/navegador
+// ---------------------------------------------------------------------------
+self.addEventListener('push', (event) => {
+    let data = {};
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (e) {
+        data = { body: event.data ? event.data.text() : '' };
+    }
+
+    const title = data.title || 'Bolão Copa 2026';
+    const options = {
+        body: data.body || '',
+        icon: data.icon || '/assets/img/icon-192.png',
+        badge: data.badge || '/assets/img/icon-192.png',
+        data: { url: data.url || '/' },
+        vibrate: [80, 40, 80],
+    };
+    if (data.tag) {
+        options.tag = data.tag;       // colapsa notificações com a mesma tag
+        options.renotify = true;       // ainda vibra/destaca ao atualizar
+    }
+
+    event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+    event.waitUntil((async () => {
+        const allClients = await self.clients.matchAll({
+            type: 'window',
+            includeUncontrolled: true,
+        });
+        // Foca uma janela do app que já exista, se houver.
+        for (const client of allClients) {
+            if ('focus' in client) {
+                client.navigate(targetUrl).catch(() => {});
+                return client.focus();
+            }
+        }
+        // Senão, abre uma nova.
+        if (self.clients.openWindow) {
+            return self.clients.openWindow(targetUrl);
+        }
+    })());
 });

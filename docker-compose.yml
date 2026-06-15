@@ -12,6 +12,13 @@ services:
       - FLASK_APP=backend.app
       - FLASK_ENV=development
       - DATABASE_URL=sqlite:////app/backend/data.db
+      # Web Push (VAPID) — gere com: docker compose exec backend python -m backend.generate_vapid
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@bolao.local}
+      # Lembretes de palpite: janela (min) e intervalo do scheduler (s)
+      - BOLAO_REMINDER_WINDOW_MIN=${BOLAO_REMINDER_WINDOW_MIN:-120}
+      - BOLAO_NOTIFY_INTERVAL=${BOLAO_NOTIFY_INTERVAL:-300}
     volumes:
       - ./backend:/app/backend
       - ./jogos_copa_2026.json:/app/jogos_copa_2026.json:ro

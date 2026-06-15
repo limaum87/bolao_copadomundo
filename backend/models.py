@@ -105,3 +105,28 @@ class AdminUser(Base):
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class PushSubscription(Base):
+    """Inscrições Web Push por participante (uma por dispositivo/navegador)."""
+
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    participant_uid = Column(String, nullable=False, index=True)
+    endpoint = Column(String, nullable=False, unique=True)
+    p256dh = Column(String, nullable=True)
+    auth_key = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NotificationLog(Base):
+    """Registro idempotente de notificações automáticas (evita duplicatas)."""
+
+    __tablename__ = "notification_log"
+
+    id = Column(Integer, primary_key=True)
+    log_key = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+

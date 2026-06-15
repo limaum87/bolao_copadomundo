@@ -809,6 +809,9 @@ if (!$uid) {
         loadParticipantName();
         loadData();
     </script>
+
+    <!-- Notificações push (Web Push / VAPID) -->
+    <script src="/assets/js/push-notifications.js?v=202606151200"></script>
 </body>
 
 </html>

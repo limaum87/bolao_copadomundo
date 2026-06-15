@@ -6,3 +6,9 @@ backend/data.db
 
 # Sync secrets
 backend/.env.sync
+
+# Web Push (VAPID) — chaves e .env do projeto (NUNCA commitar)
+.env
+.env.*
+!.env.example
+backend/.env.vapid

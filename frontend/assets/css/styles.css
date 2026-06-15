@@ -1428,3 +1428,90 @@ a:hover {
         font-size: var(--font-size-lg);
     }
 }
+
+/* ============================================
+   Web Push — banner "Ativar notificações"
+   ============================================ */
+.push-banner {
+    background: linear-gradient(135deg, var(--color-green-dark) 0%, var(--color-green) 100%);
+    color: var(--color-white);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md) var(--space-lg);
+    margin-bottom: var(--space-lg);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+    animation: push-banner-in 0.3s ease-out;
+}
+
+@keyframes push-banner-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.push-banner-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.push-banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.push-banner-text strong {
+    font-size: var(--font-size-base);
+}
+
+.push-banner-text span {
+    font-size: var(--font-size-sm);
+    opacity: 0.9;
+}
+
+.push-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.push-banner-actions .btn {
+    background: var(--color-yellow);
+    color: var(--color-blue-dark);
+    border: none;
+    font-weight: 700;
+}
+
+.push-banner-actions .btn:hover {
+    background: var(--color-yellow-dark);
+}
+
+.push-banner-close {
+    background: transparent;
+    border: none;
+    color: var(--color-white);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.8;
+    padding: 0 var(--space-xs);
+    border-radius: var(--radius-sm);
+}
+
+.push-banner-close:hover {
+    opacity: 1;
+}
+
+.push-active-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    background: rgba(72, 187, 120, 0.12);
+    color: var(--color-success);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-full);
+    margin-bottom: var(--space-md);
+}
