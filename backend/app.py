@@ -747,6 +747,9 @@ def scores():
             outcome=outcome,
             scoring_cfg=scoring_cfg,
         )
+        # Não expõe o `uid` (credencial de autenticação) na resposta pública.
+        for item in results:
+            item.pop("uid", None)
         return jsonify(results)
 
 
@@ -775,6 +778,23 @@ def ranking():
             {"name": item["name"], "points": item["total_points"]}
             for item in results
         ])
+
+
+@app.route("/me", methods=["GET"])
+def me():
+    """Retorna apenas id e nome do dono do participant_uid.
+
+    Não expõe dados de outros participantes (usado para destacar a própria
+    linha no ranking e obter o próprio nome sem vazar uids alheios).
+    """
+    participant_uid = request.args.get("participant_uid")
+    if not participant_uid:
+        return {"error": "participant_uid is required"}, 400
+    with session_scope() as session:
+        participant = session.query(Participant).filter_by(uid=participant_uid).first()
+        if not participant:
+            return {"error": "Participant not found"}, 404
+        return jsonify({"id": participant.id, "name": participant.name})
 
 
 @app.route("/scores/<int:participant_id>/details", methods=["GET"])

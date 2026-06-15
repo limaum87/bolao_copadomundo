@@ -298,6 +298,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
         // Guarda o uid localmente para o redirecionamento do PWA na landing page.
         try { localStorage.setItem('bolao_uid', uid); } catch (e) {}
         let participantName = '';
+        let myId = null;
         let gamesData = [];
         let predictionsData = [];
         let scoringConfig = null;
@@ -673,11 +674,11 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                         </thead>
                         <tbody>
                             ${scores.map((s, i) => `
-                                <tr class="${s.uid === uid ? 'highlight-row' : ''}" style="${s.uid === uid ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
+                                <tr class="${s.id === myId ? 'highlight-row' : ''}" style="${s.id === myId ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
                                     <td>${i + 1}</td>
                                     <td>
                                         ${s.name}
-                                        ${s.uid === uid ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
+                                        ${s.id === myId ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
                                     </td>
                                     <td>
                                         <button class="btn btn-sm btn-outline" style="min-width: 60px; font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
@@ -831,14 +832,14 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
         loadLiveCard();
         setInterval(loadLiveCard, 60000);
 
-        // Load participant name
+        // Load participant name + id (via /me, sem expor uids de outros)
         async function loadParticipantName() {
             try {
-                const res = await fetch(`${apiBase}/scores`);
+                const res = await fetch(`${apiBase}/me?participant_uid=${uid}`);
                 if (res.ok) {
-                    const scores = await res.json();
-                    const me = scores.find(s => s.uid === uid);
+                    const me = await res.json();
                     if (me) {
+                        myId = me.id;
                         participantName = me.name;
                         document.getElementById('participantBadge').innerHTML = `🎯 <strong>${participantName}</strong>`;
                     }
