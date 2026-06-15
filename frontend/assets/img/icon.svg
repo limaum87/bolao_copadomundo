@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Fundo verde brasileiro -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#00B04F"/>
+      <stop offset="1" stop-color="#006831"/>
+    </linearGradient>
+    <!-- Ouro do troféu -->
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE680"/>
+      <stop offset="0.45" stop-color="#FFC400"/>
+      <stop offset="1" stop-color="#E08A00"/>
+    </linearGradient>
+    <linearGradient id="goldDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F5B400"/>
+      <stop offset="1" stop-color="#B87300"/>
+    </linearGradient>
+    <!-- Brilho superior do fundo -->
+    <radialGradient id="sheen" cx="0.3" cy="0.22" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Fundo arredondado (full-bleed p/ maskable) -->
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#sheen)"/>
+
+  <!-- Troféu (centralizado, dentro da safe zone maskable ~central 80%) -->
+  <g>
+    <!-- Estrela no topo -->
+    <path d="M256 120 l11.6 29.8 32.1 2.2 -24.7 20.6 7.7 31.3 -26.7 -16.2 -26.7 16.2 7.7 -31.3 -24.7 -20.6 32.1 -2.2 z"
+          fill="url(#gold)" stroke="#B87300" stroke-width="2.5" stroke-linejoin="round"/>
+
+    <!-- Alças (esquerda + direita) -->
+    <path d="M188 200 q-46 6 -46 52 q0 38 44 50"
+          fill="none" stroke="url(#goldDark)" stroke-width="22" stroke-linecap="round"/>
+    <path d="M324 200 q46 6 46 52 q0 38 -44 50"
+          fill="none" stroke="url(#goldDark)" stroke-width="22" stroke-linecap="round"/>
+
+    <!-- Taça (corpo) -->
+    <path d="M186 180 l140 0 l-4 38 q-10 70 -66 70 q-56 0 -66 -70 z"
+          fill="url(#gold)" stroke="#B87300" stroke-width="3.5" stroke-linejoin="round"/>
+    <!-- Reflexo na taça -->
+    <path d="M205 190 l18 0 l-3 40 q-3 22 -10 36 q-9 -22 -10 -42 z"
+          fill="#FFFFFF" opacity="0.35"/>
+
+    <!-- Haste -->
+    <rect x="244" y="288" width="24" height="52" fill="url(#goldDark)"/>
+
+    <!-- Base/placa -->
+    <path d="M206 340 l100 0 l10 28 l-120 0 z" fill="url(#gold)" stroke="#B87300" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="196" y="362" width="120" height="20" rx="6" fill="url(#goldDark)"/>
+    <!-- Detalhe central da placa -->
+    <circle cx="256" cy="354" r="9" fill="#B87300" opacity="0.55"/>
+  </g>
+</svg>

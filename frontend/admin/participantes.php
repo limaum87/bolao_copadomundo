@@ -7,6 +7,18 @@ require_once __DIR__ . '/../config.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- PWA -->
+    <meta name="theme-color" content="#009739">
+    <meta name="color-scheme" content="light">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/assets/img/favicon.ico" sizes="any">
+    <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Bolão Copa">
+    <meta name="mobile-web-app-capable" content="yes">
+    <script src="/assets/js/pwa-register.js?v=202606141800" defer></script>
     <title>Participantes - Bolão Copa 2026</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

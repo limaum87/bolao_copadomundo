@@ -1,0 +1,18 @@
+# MIME type do Web App Manifest
+AddType application/manifest+json .webmanifest
+
+# Service worker NUNCA deve ser cacheado agressivamente pelo navegador/proxy,
+# senão atualizações demoram a chegar.
+<FilesMatch "^(sw\.js)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# O manifest também deve revalidar.
+<FilesMatch "\.webmanifest$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# Segurança básica
+<FilesMatch "\.(md|txt|json|db|sqlite|env|sh)$">
+    Require all denied
+</FilesMatch>

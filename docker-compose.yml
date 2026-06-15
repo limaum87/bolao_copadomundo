@@ -19,6 +19,9 @@ services:
 
   frontend:
     image: bolao-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "2626:80"
 
