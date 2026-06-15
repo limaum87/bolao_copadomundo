@@ -7,13 +7,17 @@ usuário aceita, ele recebe avisos mesmo com o app fechado.
 
 | Gatilho | Conteúdo |
 |---|---|
+| **Diário (~11h)** para quem tem push ativo e ainda não completou os palpites do dia | ⚽ "Faltam seus palpites de hoje" — lista os jogos do dia que faltam |
 | Jogo começa em ~2h e o participante **ainda não palpitar** | ⚽ "Falta seu palpite: BRA x TUR — o jogo começa em ~120 min" |
 | Resultado de um jogo é publicado (sync ESPN) | 🏁 "Resultado: BRA 2 x 1 TUR — veja quantos pontos você fez" |
 | Teste manual (admin) | 🔔 mensagem livre |
 
 Os lembretes são **idempotentes**: cada jogo×participante é avisado no máximo 1x
-(controlado pela tabela `notification_log`). O scheduler roda a cada 5 min
-(configurável).
+(controlado pela tabela `notification_log`). O scheduler de lembretes de jogo
+roda a cada 5 min (configurável). O **lembrete diário** dispara 1x/dia, a partir
+da hora configurada (`BOLAO_DAILY_REMINDER_HOUR`, default 11), com idempotência
+por data (chave `daily-missing:<YYYY-MM-DD>`) — só considera jogos do dia atual
+que ainda aceitam palpites (kickoff > agora).
 
 ## Arquitetura
 
@@ -103,6 +107,7 @@ servidor (scheduler / sync) ──(pywebpush, assina c/ VAPID privada)──▶ 
 | POST | `/push/subscribe` | pública | `{participant_uid, subscription}` — salva/renova inscrição |
 | POST | `/push/unsubscribe` | pública | `{endpoint}` — remove inscrição |
 | POST | `/push/test` | **admin** | `{participant_uid?, title?, body?}` — dispara notificação de teste |
+| POST | `/push/daily-reminder` | **admin** | `{force?}` — dispara/testa o lembrete diário de palpites faltantes |
 
 ## Observações importantes (plataformas)
 
@@ -127,6 +132,7 @@ servidor (scheduler / sync) ──(pywebpush, assina c/ VAPID privada)──▶ 
 | `VAPID_SUBJECT` | `mailto:admin@bolao.local` | Contato exigido pelo protocolo VAPID |
 | `BOLAO_REMINDER_WINDOW_MIN` | `120` | Janela de lembrete antes do jogo (min) |
 | `BOLAO_NOTIFY_INTERVAL` | `300` | Intervalo do scheduler de lembretes (s) |
+| `BOLAO_DAILY_REMINDER_HOUR` | `11` | Hora (0-23, Brasília) usada **só como valor inicial** ao criar o banco; depois disso é controlada pela tela de Configurações do admin |
 | `BOLAO_SYNC_INTERVAL` | `3600` | Intervalo do sync de resultados (s) |
 
 ## Próximos passos possíveis (não implementados)

@@ -50,6 +50,14 @@ def ensure_db_exists():
         if 'finals_deadline' not in columns:
             cursor.execute('ALTER TABLE scoring_config ADD COLUMN finals_deadline DATETIME')
             conn.commit()
+        # daily_reminder_hour: fallback inicial = env var BOLAO_DAILY_REMINDER_HOUR (default 11).
+        # Depois de criada, o banco é a única fonte de verdade (editável via /admin).
+        if 'daily_reminder_hour' not in columns:
+            init_hour = int(os.environ.get("BOLAO_DAILY_REMINDER_HOUR", "11"))
+            cursor.execute(
+                'ALTER TABLE scoring_config ADD COLUMN daily_reminder_hour INTEGER NOT NULL DEFAULT %d' % init_hour
+            )
+            conn.commit()
         conn.close()
     except Exception:
         pass
@@ -296,6 +304,57 @@ def start_notification_scheduler():
 
 
 start_notification_scheduler()
+
+
+# ---------------------------------------------------------------------------
+# Daily reminder scheduler (1x/dia, a partir das HH:00) — palpites faltantes
+# do dia. Idempotente por data (log_key daily-missing:<YYYY-MM-DD>).
+# ---------------------------------------------------------------------------
+_daily_started = False
+
+
+def _get_daily_reminder_hour() -> int:
+    """Lê a hora configurada no banco (admin pode mudar a qualquer momento).
+    Fallback: 11 (ou a env var BOLAO_DAILY_REMINDER_HOUR, só se a row não existir)."""
+    try:
+        with session_scope() as session:
+            cfg = session.query(ScoringConfig).get(1)
+            if cfg and cfg.daily_reminder_hour is not None:
+                return int(cfg.daily_reminder_hour)
+    except Exception as e:
+        _sync_log.error("🔔 [daily] erro ao ler daily_reminder_hour: %s", e)
+    return int(os.environ.get("BOLAO_DAILY_REMINDER_HOUR", "11"))
+
+
+def start_daily_reminder_scheduler():
+    """A partir das HH:00 (lido do banco), dispara 1x/dia o lembrete de
+    palpites faltantes do dia para quem tem notificação ativa."""
+    global _daily_started
+    if _daily_started:
+        return
+    _daily_started = True
+
+    def _loop():
+        _time_module.sleep(45)  # dá tempo do app/banco ficarem prontos
+        while True:
+            try:
+                now = datetime.now()
+                if now.hour >= _get_daily_reminder_hour():
+                    from .notifications import dispatch_daily_missing_reminders
+                    result = dispatch_daily_missing_reminders()
+                    # already_sent_today é esperado nas chamadas seguintes do dia
+                    if result.get("sent"):
+                        _sync_log.info("🔔 [daily] lembrete diário enviado: %s", result)
+            except Exception as e:
+                _sync_log.error("🔔 [daily] erro no lembrete diário: %s", e)
+            _time_module.sleep(60)
+
+    t = threading.Thread(target=_loop, daemon=True, name="bolao-daily-scheduler")
+    t.start()
+    _sync_log.info("🔔 Scheduler diário iniciado (hora lida do banco, default 11h)")
+
+
+start_daily_reminder_scheduler()
 
 
 @app.route("/health")
@@ -864,6 +923,11 @@ def scoring_config():
                 if not isinstance(value, int) or value < 0:
                     return {"error": f"{field} must be a non-negative integer"}, 400
                 setattr(config, field, value)
+        if "daily_reminder_hour" in data:
+            value = data["daily_reminder_hour"]
+            if not isinstance(value, int) or not (0 <= value <= 23):
+                return {"error": "daily_reminder_hour must be an integer between 0 and 23"}, 400
+            config.daily_reminder_hour = value
         if "finals_deadline" in data:
             value = data["finals_deadline"]
             if value is None or value == "":
@@ -955,6 +1019,7 @@ def serialize_scoring_config(config: ScoringConfig):
         "third_place": config.third_place,
         "fourth_place": config.fourth_place,
         "finals_deadline": config.finals_deadline.isoformat() if getattr(config, 'finals_deadline', None) else None,
+        "daily_reminder_hour": getattr(config, 'daily_reminder_hour', 11),
     }
 
 
@@ -1204,6 +1269,22 @@ def push_test():
         else:
             sent, total = broadcast_to_all(session, title, body, url="/")
     return {"sent": sent, "total": total}
+
+
+@app.route("/push/daily-reminder", methods=["POST"])
+@token_required
+def push_daily_reminder():
+    """Dispara/testa o lembrete diário de palpites faltantes do dia (admin).
+
+    Body opcional: { "force": true } — ignora a idempotência e NÃO marca o
+    log (modo teste: não bloqueia o disparo automático do dia).
+    Retorna { games, targeted, sent }.
+    """
+    from .notifications import dispatch_daily_missing_reminders
+
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get("force", False))
+    return jsonify(dispatch_daily_missing_reminders(force=force))
 
 
 @app.route("/push/subscriptions", methods=["GET"])

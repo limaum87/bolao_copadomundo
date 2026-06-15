@@ -104,6 +104,22 @@ require_once __DIR__ . '/../config.php';
                 </form>
             </div>
 
+            <!-- Notifications Config -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">🔔 Notificações</h3>
+                <p class="text-muted mb-lg">Defina o horário do lembrete diário enviado aos participantes com notificação ativa que ainda não completaram os palpites dos jogos do dia.</p>
+                <form id="notificationsForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">⏰ Hora do lembrete diário</label>
+                            <select name="daily_reminder_hour" class="form-input" required>
+                            </select>
+                            <small class="text-muted">A partir dessa hora, o servidor dispara 1x/dia o aviso (horário de Brasília)</small>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
             <!-- Finals Deadline -->
             <div class="card mb-xl">
                 <h3 class="card-title mb-lg">⏰ Prazo para Palpites Finais</h3>
@@ -214,7 +230,20 @@ require_once __DIR__ . '/../config.php';
             runner_up: 15,
             third_place: 10,
             fourth_place: 10,
+            daily_reminder_hour: 11,
         };
+
+        // Popula o select de hora do lembrete diário (00–23)
+        (function populateReminderHour() {
+            const sel = document.querySelector('select[name="daily_reminder_hour"]');
+            if (!sel) return;
+            let opts = '';
+            for (let h = 0; h <= 23; h++) {
+                const hh = String(h).padStart(2, '0');
+                opts += `<option value="${h}">${hh}:00</option>`;
+            }
+            sel.innerHTML = opts;
+        })();
 
         function fillForm(config) {
             const fields = ['exact_score', 'correct_result', 'partial_score',
@@ -234,6 +263,12 @@ require_once __DIR__ . '/../config.php';
                 const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
                 deadlineInput.value = local.toISOString().slice(0, 16);
             }
+
+            // Fill daily reminder hour
+            const reminderSelect = document.querySelector('select[name="daily_reminder_hour"]');
+            if (reminderSelect) {
+                reminderSelect.value = String(config.daily_reminder_hour ?? DEFAULTS.daily_reminder_hour);
+            }
         }
 
         function getFormData() {
@@ -251,6 +286,12 @@ require_once __DIR__ . '/../config.php';
             const deadlineInput = document.querySelector('input[name="finals_deadline"]');
             if (deadlineInput) {
                 data.finals_deadline = deadlineInput.value || null;
+            }
+
+            // Include daily reminder hour
+            const reminderSelect = document.querySelector('select[name="daily_reminder_hour"]');
+            if (reminderSelect) {
+                data.daily_reminder_hour = parseInt(reminderSelect.value, 10);
             }
 
             return data;
@@ -332,6 +373,14 @@ require_once __DIR__ . '/../config.php';
 
             // Validate all values are non-negative integers
             for (const [key, value] of Object.entries(data)) {
+                if (key === 'finals_deadline') continue; // pode ser null/string
+                if (key === 'daily_reminder_hour') {
+                    if (isNaN(value) || value < 0 || value > 23) {
+                        showToast('A hora do lembrete deve estar entre 0 e 23.', 'error');
+                        return;
+                    }
+                    continue;
+                }
                 if (isNaN(value) || value < 0) {
                     showToast('Todos os valores devem ser números inteiros não negativos.', 'error');
                     return;

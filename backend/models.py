@@ -93,6 +93,8 @@ class ScoringConfig(Base):
     third_place = Column(Integer, nullable=False, default=10)
     fourth_place = Column(Integer, nullable=False, default=10)
     finals_deadline = Column(DateTime, nullable=True)
+    # Hora (0-23) do lembrete diário de palpites faltantes. Default 11h.
+    daily_reminder_hour = Column(Integer, nullable=False, default=11)
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -273,6 +273,123 @@ def dispatch_pregame_reminders() -> dict:
     return {"games": len(games), "sent": sent}
 
 
+def dispatch_daily_missing_reminders(force: bool = False) -> dict:
+    """Lembrete diário (ex: às 11h): avisa cada inscrito que ainda NÃO
+    palpitarou TODOS os jogos do dia. Idempotente por data
+    (log_key `daily-missing:<YYYY-MM-DD>`).
+
+    Considera apenas jogos cujo kickoff é HOJE e ainda aceitam palpites
+    (kickoff > agora). Jogos da manhã que já começaram são ignorados
+    (não dá mais pra palpitar). Só envia para quem tem inscrição ativa
+    (PushSubscription).
+
+    Horário disparado pelo scheduler: BOLAO_DAILY_REMINDER_HOUR (default 11).
+
+    `force=True` ignora a idempotência e NÃO marca o log — modo teste
+    (não bloqueia o disparo automático do dia).
+    """
+    from .database import session_scope
+    from .models import (Game, NotificationLog, Participant, Prediction,
+                         PushSubscription)
+
+    if not is_push_enabled():
+        return {"sent": 0, "reason": "push_disabled"}
+
+    now = datetime.now()
+    today = now.date()
+    log_key = f"daily-missing:{today.isoformat()}"
+
+    plan = []  # (uid, payload)
+    expired_endpoints = []
+    games_count = 0
+
+    with session_scope() as session:
+        # Idempotência global: se já rodou hoje, sai (a não ser que force).
+        if not force and session.query(NotificationLog).filter_by(log_key=log_key).first():
+            return {"sent": 0, "reason": "already_sent_today"}
+
+        # Jogos do dia que ainda aceitam palpites (kickoff > agora e hoje).
+        end_of_day = datetime.combine(today, datetime.max.time())
+        games = (
+            session.query(Game)
+            .filter(Game.kickoff > now, Game.kickoff <= end_of_day)
+            .order_by(Game.kickoff)
+            .all()
+        )
+        games_count = len(games)
+
+        if not games:
+            if not force:
+                session.add(NotificationLog(log_key=log_key))  # marca p/ não repetir
+            return {"games": 0, "sent": 0, "reason": "no_games_today"}
+
+        # UIDs com notificação ativa
+        subs_uids = {
+            r[0]
+            for r in session.query(PushSubscription.participant_uid).distinct().all()
+        }
+        if not subs_uids:
+            if not force:
+                session.add(NotificationLog(log_key=log_key))
+            return {"games": games_count, "sent": 0, "reason": "no_subscribers"}
+
+        uid_to_p = {p.uid: p for p in session.query(Participant).all()}
+
+        # Para cada inscrito, descobre quais jogos do dia faltam palpite.
+        for uid in subs_uids:
+            p = uid_to_p.get(uid)
+            if not p:
+                continue
+            missing = []
+            for game in games:
+                already = (
+                    session.query(Prediction)
+                    .filter_by(participant_id=p.id, game_id=game.id)
+                    .first()
+                )
+                if not already:
+                    missing.append(game)
+
+            if not missing:
+                continue  # já completou todos do dia
+
+            n = len(missing)
+            if n == 1:
+                g = missing[0]
+                body = f"Hoje tem {g.team_a} x {g.team_b} e você ainda não palpitou. Dá seu palpite!"
+            else:
+                nomes = ", ".join(f"{g.team_a} x {g.team_b}" for g in missing)
+                if len(nomes) > 120:
+                    body = f"Faltam {n} palpites de hoje. Complete antes dos jogos começarem!"
+                else:
+                    body = f"Faltam {n} palpites de hoje: {nomes}"
+
+            title = "⚽ Faltam seus palpites de hoje"
+            plan.append((uid, _payload(title, body, url=f"/user/{uid}", tag=log_key)))
+
+        # Marca como processado (só no modo normal) — evita reenvio/spam.
+        if not force:
+            session.add(NotificationLog(log_key=log_key))
+
+    # Envia fora da sessão (cada send_push é só HTTP)
+    sent = 0
+    with session_scope() as session:
+        for uid, payload in plan:
+            ok = False
+            for row in session.query(PushSubscription).filter_by(participant_uid=uid).all():
+                status = send_push(_sub_to_dict(row), payload)
+                if status == "ok":
+                    ok = True
+                elif status == "expired":
+                    expired_endpoints.append(row.endpoint)
+            if ok:
+                sent += 1
+        for ep in expired_endpoints:
+            session.query(PushSubscription).filter_by(endpoint=ep).delete()
+
+    return {"games": games_count, "targeted": len(plan), "sent": sent}
+
+
 def dispatch_result_notifications(results: list) -> dict:
     """Notifica 'resultado disponível' para jogos recém-atualizados pelo sync.
 
