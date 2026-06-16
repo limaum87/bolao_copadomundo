@@ -2,6 +2,15 @@ __pycache__/
 *.pyc
 *.pyo
 backend/data.db
+
+# Backups do banco (NUNCA commitar — contêm dados de produção)
+*.sqlite
+*.sqlite3
+*.db.bak*
+backend/data.db.*
+
+# Imagens avulsas de teste
+top3.png
 .venv/
 
 # Sync secrets

@@ -23,7 +23,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606121841">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606161600">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -196,6 +196,23 @@ require_once __DIR__ . '/../config.php';
                         </form>
                     </div>
                 </div>
+            </div>
+
+            <!-- Ranking History (backfill) -->
+            <div class="card mb-xl">
+                <h3 class="card-title mb-lg">📈 Histórico do Ranking</h3>
+                <p class="text-muted mb-md" style="font-size: 0.9rem;">
+                    Recria o histórico de posições do ranking a partir dos jogos já
+                    finalizados (um snapshot por dia de jogo). Isso dá uma base real
+                    para a coluna de variação (▲/▼) funcionar desde o início do torneio.
+                </p>
+                <button type="button" class="btn btn-secondary btn-block" onclick="backfillRanking()">
+                    🔄 Recriar Histórico do Ranking
+                </button>
+                <p class="text-muted mt-sm" style="font-size: 0.8rem;">
+                    Seguro e idempotente: pode ser executado quantas vezes quiser.
+                </p>
+                <div id="backfillResult" style="display:none;" class="mt-md"></div>
             </div>
 
             <!-- Save Button -->
@@ -447,6 +464,44 @@ require_once __DIR__ . '/../config.php';
                 }
             } catch (error) {
                 showToast('Erro de conex\u00e3o', 'error');
+            }
+        }
+
+        // Ranking History Backfill
+        async function backfillRanking() {
+            if (!confirm('Isso vai recriar todo o histórico do ranking a partir dos jogos finalizados. Continuar?')) {
+                return;
+            }
+            const resultDiv = document.getElementById('backfillResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ Recriando histórico...</div>';
+            try {
+                const res = await fetch(`${apiBase}/ranking/backfill`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    let html = `<div class="alert alert-success">✅ Histórico recriado: <strong>${data.rebuilt_dates} dia(s)</strong> de jogo.</div>`;
+                    if (data.summary && data.summary.length) {
+                        html += '<div class="table-container mt-md"><table class="table"><thead><tr><th>Data</th><th>Jogos</th><th>Top 3 do dia</th></tr></thead><tbody>';
+                        data.summary.forEach(s => {
+                            const top3 = s.top3.map(t => `${t.position}º ${t.name} (${t.points})`).join(' · ');
+                            html += `<tr><td>${s.date}</td><td>${s.games_counted}</td><td style="font-size:0.85rem;">${top3}</td></tr>`;
+                        });
+                        html += '</tbody></table></div>';
+                    }
+                    resultDiv.innerHTML = html;
+                    showToast('✅ Histórico do ranking recriado!', 'success');
+                } else if (res.status === 401) {
+                    return;
+                } else {
+                    resultDiv.innerHTML = '<div class="alert alert-error">Erro ao recriar histórico</div>';
+                    showToast('Erro ao recriar histórico', 'error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="alert alert-error">Erro de conexão</div>';
+                showToast('Erro de conexão', 'error');
             }
         }
 

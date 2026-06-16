@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 
@@ -130,5 +130,24 @@ class NotificationLog(Base):
 
     id = Column(Integer, primary_key=True)
     log_key = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RankingSnapshot(Base):
+    """Snapshot diário do ranking: posição/pontos de cada participante num dado dia.
+
+    Usado para calcular a variação de posição desde o dia anterior (↑/↓).
+    Um snapshot por (snapshot_date, participant_id)."""
+
+    __tablename__ = "ranking_snapshots"
+    __table_args__ = (
+        UniqueConstraint("snapshot_date", "participant_id", name="uq_snapshot_date_participant"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    snapshot_date = Column(Date, nullable=False, index=True)
+    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+    points = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 

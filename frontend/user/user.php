@@ -44,7 +44,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606151700">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606161600">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -661,6 +661,25 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
             }
         }
 
+        // Renderiza o badge de variação de posição desde o dia anterior.
+        //   v > 0 : subiu (verde ▲)
+        //   v < 0 : caiu (vermelho ▼)
+        //   v == 0: manteve
+        //   null  : sem histórico (participante novo / primeiro dia)
+        function variationBadge(v) {
+            if (v === null || v === undefined) {
+                return '<span class="pos-change pos-same" title="Sem histórico anterior">—</span>';
+            }
+            if (v > 0) {
+                return `<span class="pos-change pos-up" title="Subiu ${v} posiç${v === 1 ? 'ão' : 'ões'} desde ontem">▲ ${v}</span>`;
+            }
+            if (v < 0) {
+                const n = Math.abs(v);
+                return `<span class="pos-change pos-down" title="Caiu ${n} posiç${n === 1 ? 'ão' : 'ões'} desde ontem">▼ ${n}</span>`;
+            }
+            return '<span class="pos-change pos-same" title="Manteve a posição">=</span>';
+        }
+
         // Load Ranking
         async function loadRanking() {
             try {
@@ -670,7 +689,12 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                 const rankingHtml = scores.length > 0
                     ? `<table class="table">
                         <thead>
-                            <tr><th>#</th><th>Participante</th><th>Pontos</th></tr>
+                            <tr>
+                                <th>#</th>
+                                <th>Participante</th>
+                                <th style="text-align:center;" title="Variação de posição em relação ao dia anterior">↕ Variação</th>
+                                <th>Pontos</th>
+                            </tr>
                         </thead>
                         <tbody>
                             ${scores.map((s, i) => `
@@ -680,6 +704,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                                         ${s.name}
                                         ${s.id === myId ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
                                     </td>
+                                    <td style="text-align:center;">${variationBadge(s.variation)}</td>
                                     <td>
                                         <button class="btn btn-sm btn-outline" style="min-width: 60px; font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
                                             ${s.total_points || 0}

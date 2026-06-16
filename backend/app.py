@@ -13,7 +13,8 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from .database import engine, session_scope, DATABASE_URL
 from .models import (AdminUser, Base, FinalsPrediction, Game, NotificationLog,
-                    Participant, Prediction, PushSubscription, ScoringConfig, TournamentOutcome)
+                    Participant, Prediction, PushSubscription, RankingSnapshot, ScoringConfig,
+                    TournamentOutcome)
 from .scoring import calculate_scores, score_prediction, get_scoring_config_dict
 
 
@@ -355,6 +356,119 @@ def start_daily_reminder_scheduler():
 
 
 start_daily_reminder_scheduler()
+
+
+# ---------------------------------------------------------------------------
+# Ranking snapshot scheduler (1x/dia) — congela a posição de cada participante
+# no fechamento do dia anterior, para alimentar a coluna de variação (↑/↓).
+# Idempotente por data: se já existe snapshot de ontem, não faz nada.
+# ---------------------------------------------------------------------------
+# Hora (0-23) do snapshot diário do ranking. Default 5h: garante que todos
+# os jogos do dia anterior já terminaram e foram sincronizados (inclusive os
+# que terminam logo após a meia-noite) antes de congelar o ranking de ontem.
+SNAPSHOT_HOUR = int(os.environ.get("BOLAO_SNAPSHOT_HOUR", "5"))
+_snapshot_started = False
+
+
+def _compute_ranking_results(session):
+    """Calcula o ranking completo a partir do estado atual do banco."""
+    participants = session.query(Participant).all()
+    games = session.query(Game).all()
+    predictions = session.query(Prediction).all()
+    finals_predictions = session.query(FinalsPrediction).all()
+    outcome = session.query(TournamentOutcome).get(1)
+    config = session.query(ScoringConfig).get(1)
+    scoring_cfg = get_scoring_config_dict(config)
+    return calculate_scores(
+        participants=participants,
+        games=games,
+        predictions=predictions,
+        finals_predictions=finals_predictions,
+        outcome=outcome,
+        scoring_cfg=scoring_cfg,
+    )
+
+
+def _capture_ranking_snapshot(session, target_date, results):
+    """Insere (idempotente) um snapshot do ranking para `target_date`.
+
+    `results` deve ser a lista já ordenada retornada por calculate_scores
+    (maior pontuação primeiro). A posição é ordinal (1-based).
+    Retorna True se criou o snapshot, False se já existia.
+    """
+    exists = session.query(RankingSnapshot.id).filter_by(snapshot_date=target_date).first()
+    if exists:
+        return False
+    for idx, item in enumerate(results):
+        session.add(RankingSnapshot(
+            snapshot_date=target_date,
+            participant_id=item["id"],
+            position=idx + 1,
+            points=item.get("total_points", 0),
+        ))
+    return True
+
+
+def ensure_yesterday_snapshot(now=None):
+    """Cria o snapshot de ontem (se ainda não existir) com o ranking atual.
+    Idempotente. Usado pelo scheduler em background."""
+    now = now or datetime.now()
+    today = now.date() if isinstance(now, datetime) else now
+    yesterday = today - timedelta(days=1)
+    with session_scope() as session:
+        results = _compute_ranking_results(session)
+        return _capture_ranking_snapshot(session, yesterday, results)
+
+
+def _seconds_until_next_snapshot(now=None):
+    """Segundos até a próxima hora agendada do snapshot (default 5h)."""
+    now = now or datetime.now()
+    target = now.replace(hour=SNAPSHOT_HOUR, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    return max(int((target - now).total_seconds()), 60)
+
+
+def start_ranking_snapshot_scheduler():
+    """Idempotente por processo. Roda 1x/dia, à hora agendada (default 5h),
+    criando o snapshot do ranking do dia anterior.
+
+    Por que esperar até as 5h? Para garantir que TODOS os jogos do dia anterior
+    já terminaram e foram sincronizados (inclusive os que terminam logo após
+    a meia-noite) — só assim o ranking de ontem é congelado com o estado final
+    correto, consistente com o backfill (que atribui jogos pela data do kickoff).
+    """
+    global _snapshot_started
+    if _snapshot_started:
+        return
+    _snapshot_started = True
+
+    def _loop():
+        _time_module.sleep(60)  # dá tempo do app/banco ficarem prontos
+        while True:
+            now = datetime.now()
+            try:
+                # Só cria após a hora agendada. Antes disso, apenas aguarda.
+                # Idempotente: se já existe (ex.: criado por outra chamada), no-op.
+                if now.hour >= SNAPSHOT_HOUR:
+                    created = ensure_yesterday_snapshot(now)
+                    if created:
+                        _sync_log.info("📸 [snapshot] snapshot do dia anterior criado (%dh)", SNAPSHOT_HOUR)
+                    # Feito por hoje: dorme até amanhã na hora agendada.
+                    _time_module.sleep(_seconds_until_next_snapshot())
+                    continue
+            except Exception as e:
+                _sync_log.error("📸 [snapshot] erro ao criar snapshot: %s", e)
+            # Antes da hora OU falhou: re-checa em alguns minutos (retry rápido
+            # em caso de erro; espera curta antes da hora agendada).
+            _time_module.sleep(300)
+
+    t = threading.Thread(target=_loop, daemon=True, name="bolao-snapshot-scheduler")
+    t.start()
+    _sync_log.info("📸 Scheduler de snapshot de ranking iniciado (diário às %dh)", SNAPSHOT_HOUR)
+
+
+start_ranking_snapshot_scheduler()
 
 
 @app.route("/health")
@@ -790,25 +904,46 @@ def tournament_outcome():
 @app.route("/scores", methods=["GET"])
 def scores():
     with session_scope() as session:
-        participants = session.query(Participant).all()
-        games = session.query(Game).all()
-        predictions = session.query(Prediction).all()
-        finals_predictions = session.query(FinalsPrediction).all()
-        outcome = session.query(TournamentOutcome).get(1)
-        config = session.query(ScoringConfig).get(1)
-        scoring_cfg = get_scoring_config_dict(config)
-
-        results = calculate_scores(
-            participants=participants,
-            games=games,
-            predictions=predictions,
-            finals_predictions=finals_predictions,
-            outcome=outcome,
-            scoring_cfg=scoring_cfg,
-        )
+        results = _compute_ranking_results(session)
         # Não expõe o `uid` (credencial de autenticação) na resposta pública.
         for item in results:
             item.pop("uid", None)
+
+        # Garante o snapshot de ontem (idempotente) — mas SOMENTE após a hora
+        # agendada (default 5h). Isso garante que todos os jogos de ontem já
+        # terminaram e foram sincronizados antes de congelar o ranking,
+        # mantendo consistência com o backfill (jogos atribuídos pela data do
+        # kickoff) e com o scheduler diário. Robustez caso o scheduler não rode.
+        today = datetime.now().date()
+        try:
+            if datetime.now().hour >= SNAPSHOT_HOUR:
+                yesterday = today - timedelta(days=1)
+                _capture_ranking_snapshot(session, yesterday, results)
+                session.flush()  # garante visibilidade na leitura de referência abaixo
+        except Exception as e:
+            _sync_log.error("📸 [scores] erro ao garantir snapshot: %s", e)
+
+        # Variação de posição vs snapshot de referência = dia mais recente
+        # estritamente anterior a hoje (geralmente ontem).
+        from sqlalchemy import func
+        latest_date = session.query(func.max(RankingSnapshot.snapshot_date)).filter(
+            RankingSnapshot.snapshot_date < today
+        ).scalar()
+        ref_map = {}
+        if latest_date:
+            rows = session.query(RankingSnapshot).filter_by(snapshot_date=latest_date).all()
+            ref_map = {r.participant_id: r.position for r in rows}
+
+        for idx, item in enumerate(results):
+            current_pos = idx + 1
+            prev_pos = ref_map.get(item["id"])
+            # variation = posicao_anterior - posicao_atual
+            #   > 0 : subiu (verde ↑)
+            #   < 0 : desceu (vermelho ↓)
+            #   0   : manteve
+            #   None: sem histórico (participante novo / ainda não há snapshot)
+            item["variation"] = (prev_pos - current_pos) if prev_pos is not None else None
+
         return jsonify(results)
 
 
@@ -816,27 +951,114 @@ def scores():
 def ranking():
     """Ranking simplificado: apenas nome e pontuação, do maior para o menor."""
     with session_scope() as session:
+        results = _compute_ranking_results(session)
+        # calculate_scores já ordena por pontos (desc) e nome (asc)
+        return jsonify([
+            {"name": item["name"], "points": item["total_points"]}
+            for item in results
+        ])
+
+
+@app.route("/ranking/snapshot", methods=["POST"])
+@token_required
+def ranking_snapshot():
+    """Captura/força um snapshot do ranking para uma data (admin).
+
+    Body (opcional):
+      - date: "YYYY-MM-DD" (default: ontem). Útil para backfill de dias
+        anteriores ou para reprocessar um snapshot.
+    Retorna a data do snapshot criado/ignorado e a lista de posições.
+    """
+    data = request.get_json(silent=True) or {}
+    date_str = data.get("date")
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
+    else:
+        target_date = datetime.now().date() - timedelta(days=1)
+
+    with session_scope() as session:
+        results = _compute_ranking_results(session)
+        created = _capture_ranking_snapshot(session, target_date, results)
+        return jsonify({
+            "created": created,
+            "snapshot_date": target_date.isoformat(),
+            "positions": [
+                {"participant_id": item["id"], "name": item["name"],
+                 "position": idx + 1, "points": item.get("total_points", 0)}
+                for idx, item in enumerate(results)
+            ],
+        })
+
+
+@app.route("/ranking/backfill", methods=["POST"])
+@token_required
+def ranking_backfill():
+    """Recria o histórico de snapshots do ranking a partir dos jogos finalizados.
+
+    Para cada dia em que houve jogo finalizado (data do kickoff, anterior a
+    hoje), recalcula o ranking considerando APENAS os jogos terminados até
+    aquele dia e congela um snapshot. Assim a coluna de variação (↑/↓) passa
+    a ter uma base histórica real desde o primeiro jogo.
+
+    Útil quando o recurso foi adicionado depois do início do torneio.
+    Idempotente: pode ser executado quantas vezes quiser — sempre reconstrói
+    do zero os snapshots históricos.
+    """
+    with session_scope() as session:
+        finished_games = session.query(Game).filter(Game.score_a.isnot(None)).all()
+        today = datetime.now().date()
+        # Datas distintas de jogos finalizados (dia do kickoff) anteriores a hoje.
+        gamedays = sorted({
+            g.kickoff.date() for g in finished_games
+            if g.kickoff is not None and g.kickoff.date() < today
+        })
+
         participants = session.query(Participant).all()
-        games = session.query(Game).all()
         predictions = session.query(Prediction).all()
         finals_predictions = session.query(FinalsPrediction).all()
         outcome = session.query(TournamentOutcome).get(1)
         config = session.query(ScoringConfig).get(1)
         scoring_cfg = get_scoring_config_dict(config)
 
-        results = calculate_scores(
-            participants=participants,
-            games=games,
-            predictions=predictions,
-            finals_predictions=finals_predictions,
-            outcome=outcome,
-            scoring_cfg=scoring_cfg,
-        )
-        # calculate_scores já ordena por pontos (desc) e nome (asc)
-        return jsonify([
-            {"name": item["name"], "points": item["total_points"]}
-            for item in results
-        ])
+        # Reconstrói do zero os snapshots históricos.
+        session.query(RankingSnapshot).delete()
+
+        summary = []
+        for d in gamedays:
+            games_up_to = [g for g in finished_games if g.kickoff.date() <= d]
+            results = calculate_scores(
+                participants=participants,
+                games=games_up_to,
+                predictions=predictions,
+                finals_predictions=finals_predictions,
+                outcome=outcome,
+                scoring_cfg=scoring_cfg,
+            )
+            for idx, item in enumerate(results):
+                session.add(RankingSnapshot(
+                    snapshot_date=d,
+                    participant_id=item["id"],
+                    position=idx + 1,
+                    points=item.get("total_points", 0),
+                ))
+            summary.append({
+                "date": d.isoformat(),
+                "games_counted": len(games_up_to),
+                "top3": [
+                    {"position": i + 1, "name": r["name"], "points": r["total_points"]}
+                    for i, r in enumerate(results[:3])
+                ],
+            })
+
+        _sync_log.info("📸 [backfill] %d snapshot(s) históricos recriados", len(gamedays))
+        return jsonify({
+            "rebuilt_dates": len(gamedays),
+            "dates": [d.isoformat() for d in gamedays],
+            "summary": summary,
+        })
 
 
 @app.route("/me", methods=["GET"])
