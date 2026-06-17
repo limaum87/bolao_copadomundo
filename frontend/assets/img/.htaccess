@@ -1,0 +1,8 @@
+# Ícones do app / favicon / notificação: podem mudar entre deploys.
+# "no-cache" permite cache local mas força revalidação (ETag / Last-Modified),
+# devolvendo 304 quando não houve mudança. Assim, quando trocamos um ícone no
+# servidor, navegadores e o Chrome do Android (ao atualizar o PWA instalado)
+# passam a baixar a versão nova imediatamente, em vez de ficar com a antiga.
+<FilesMatch "\.(png|ico|svg)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>

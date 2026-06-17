@@ -67,8 +67,8 @@ def _payload(title: str, body: str, url: str = "/", tag: str | None = None) -> d
         "body": body,
         "url": url,
         "tag": tag,
-        "icon": "/assets/img/icon-192.png",
-        "badge": "/assets/img/icon-192.png",
+        "icon": "/assets/img/notif-icon-192.png",
+        "badge": "/assets/img/notif-badge-96.png",
     }
 
 

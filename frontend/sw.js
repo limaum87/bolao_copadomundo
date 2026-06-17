@@ -7,7 +7,7 @@
 //
 // Bump de versão: troque CACHE abaixo quando atualizar o shell.
 
-const CACHE = 'bolao-shell-v2';
+const CACHE = 'bolao-shell-v3';
 
 const CORE_ASSETS = [
     '/',
@@ -19,6 +19,8 @@ const CORE_ASSETS = [
     '/assets/js/toast.js',
     '/assets/img/icon-192.png',
     '/assets/img/icon-512.png',
+    '/assets/img/notif-icon-192.png',
+    '/assets/img/notif-badge-96.png',
 ];
 
 // Extensões consideradas estáticas (mesmo-origin).
@@ -115,8 +117,8 @@ self.addEventListener('push', (event) => {
     const title = data.title || 'Bolão Copa 2026';
     const options = {
         body: data.body || '',
-        icon: data.icon || '/assets/img/icon-192.png',
-        badge: data.badge || '/assets/img/icon-192.png',
+        icon: data.icon || '/assets/img/notif-icon-192.png',
+        badge: data.badge || '/assets/img/notif-badge-96.png',
         data: { url: data.url || '/' },
         vibrate: [80, 40, 80],
     };
