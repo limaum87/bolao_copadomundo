@@ -190,70 +190,144 @@ def notify_uid(session, uid: str, title: str, body: str, url: str = "/", tag: st
 # ---------------------------------------------------------------------------
 # Schedulers (entry points — abrem a própria sessão)
 # ---------------------------------------------------------------------------
-def dispatch_pregame_reminders() -> dict:
-    """Lembretes de palpite: para jogos que começam em até N minutos, avisa
-    os inscritos que ainda não palpitarão esse jogo. Idempotente por jogo+uid.
+def _reminder_checkpoints() -> list[int]:
+    """Minutos antes do kickoff em que disparar lembretes (decrescente).
 
-    Janela configurável: BOLAO_REMINDER_WINDOW_MIN (default 120).
+    Configurável via BOLAO_REMINDER_CHECKPOINTS (default "180,120,60" =
+    3h, 2h e 1h antes). Checkpoints devem ficar espaçados entre si por mais
+    que 2x a tolerância (_reminder_tolerance_min) para não sobrepor janelas.
     """
-    from .database import session_scope
+    raw = os.environ.get("BOLAO_REMINDER_CHECKPOINTS", "180,120,60")
+    pts: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            pts.append(int(part))
+        except ValueError:
+            _log.warning("BOLAO_REMINDER_CHECKPOINTS: valor inválido ignorado: %r", part)
+    pts = sorted(set(pts), reverse=True)
+    return pts or [180, 120, 60]
+
+
+def _reminder_tolerance_min() -> int:
+    """Margem (min) ao redor de cada checkpoint para considerar "na hora".
+
+    O scheduler roda a cada BOLAO_NOTIFY_INTERVAL (default 300s = 5 min). A
+    tolerância cobre ao menos 2 ciclos para que um restart/curta
+    indisponibilidade não faça perder o checkpoint. Default 15 min.
+    """
+    try:
+        return max(5, int(os.environ.get("BOLAO_REMINDER_TOLERANCE_MIN", "15")))
+    except ValueError:
+        return 15
+
+
+def _humanize_minutes(m: int) -> str:
+    """180 -> '3h', 120 -> '2h', 60 -> '1h', 45 -> '45 min'."""
+    if m >= 60 and m % 60 == 0:
+        return f"{m // 60}h"
+    if m >= 60:
+        return f"~{m // 60}h"
+    return f"{m} min"
+
+
+def _plan_pregame_reminders(session, now: datetime | None = None,
+                            checkpoints: list[int] | None = None,
+                            tol: int | None = None) -> list[tuple[str, dict, str]]:
+    """Monta o plano de lembretes (SEM enviar) para a data/hora `now`.
+
+    Para cada jogo futuro dentro do horizonte (até o maior checkpoint + tol),
+    e para cada checkpoint C cuja janela [C-tol, C] engloba minutos_to, avisa
+    inscritos sem palpite e sem log `pregame:{game}:{uid}:{C}`.
+
+    Retorna lista de (uid, payload, log_key). NÃO cria os logs (quem envia
+    é o dispatch) — separada do envio p/ ser testável sem VAPID.
+    """
     from .models import (Game, NotificationLog, Participant, Prediction,
                          PushSubscription)
 
-    if not is_push_enabled():
-        return {"sent": 0, "reason": "push_disabled"}
+    now = now or datetime.now()
+    checkpoints = checkpoints or _reminder_checkpoints()
+    tol = tol if tol is not None else _reminder_tolerance_min()
 
-    window_min = int(os.environ.get("BOLAO_REMINDER_WINDOW_MIN", "120"))
-    now = datetime.now()
-    horizon = now + timedelta(minutes=window_min)
+    horizon = now + timedelta(minutes=max(checkpoints) + tol)
+    games = session.query(Game).filter(Game.kickoff > now, Game.kickoff <= horizon).all()
+    if not games:
+        return []
 
-    # Coleta o plano DENTRO da sessão; envia DEPOIS (fora dela).
-    plan = []  # (uid, endpoint, sub_dict, payload, log_key)
-    expired_endpoints = []
+    subs_uids = {
+        r[0]
+        for r in session.query(PushSubscription.participant_uid).distinct().all()
+    }
+    if not subs_uids:
+        return []
 
-    with session_scope() as session:
-        games = session.query(Game).filter(Game.kickoff > now, Game.kickoff <= horizon).all()
-        if not games:
-            return {"games": 0, "sent": 0}
+    uid_to_p = {p.uid: p for p in session.query(Participant).all()}
 
-        subs_uids = {
-            r[0]
-            for r in session.query(PushSubscription.participant_uid).distinct().all()
-        }
-        if not subs_uids:
-            return {"games": len(games), "sent": 0}
+    # Cache de quem já palpitou (participant_id, game_id) p/ evitar N queries.
+    predicted_pairs = {
+        (pred.participant_id, pred.game_id)
+        for pred in session.query(Prediction).all()
+    }
 
-        uid_to_p = {p.uid: p for p in session.query(Participant).all()}
-
-        for game in games:
-            minutes_to = max(1, int(round((game.kickoff - now).total_seconds() / 60)))
-            # só enviar se a janela "bateu": minutos_to <= window_min (sempre true
-            # pela query). Limitamos também a não lembrar com >24h (impossível aqui).
+    plan: list[tuple[str, dict, str]] = []
+    for game in games:
+        minutes_to = int(round((game.kickoff - now).total_seconds() / 60))
+        if minutes_to <= 0:
+            continue
+        for C in checkpoints:
+            # Janela: faltam entre (C - tol) e C minutos.
+            if not (C - tol <= minutes_to <= C):
+                continue
             title = f"⚽ Falta seu palpite: {game.team_a} x {game.team_b}"
-            body = f"O jogo começa em ~{minutes_to} min. Dá seu palpite agora!"
-            url = "/"  # preenchido por uid abaixo
-
+            body = f"Faltam {_humanize_minutes(minutes_to)} pro jogo. Dá seu palpite agora!"
             for uid in subs_uids:
                 p = uid_to_p.get(uid)
                 if not p:
                     continue
-                log_key = f"pregame:{game.id}:{uid}"
+                if (p.id, game.id) in predicted_pairs:
+                    continue  # já palpitou
+                log_key = f"pregame:{game.id}:{uid}:{C}"
                 if session.query(NotificationLog).filter_by(log_key=log_key).first():
-                    continue
-                # Já palpitou? → não precisa lembrar.
-                already = (
-                    session.query(Prediction)
-                    .filter_by(participant_id=p.id, game_id=game.id)
-                    .first()
-                )
-                if already:
-                    continue
+                    continue  # já avisou esse checkpoint
                 plan.append((uid, _payload(title, body, url=f"/user/{uid}", tag=log_key), log_key))
+    return plan
 
-        if not plan:
-            return {"games": len(games), "sent": 0}
 
-    # Envia fora da sessão (cada send_push é só HTTP)
+def dispatch_pregame_reminders() -> dict:
+    """Lembretes de palpite multi-checkpoint.
+
+    Dispara notificações em vários checkpoints antes do jogo (default
+    3h, 2h e 1h antes) para os inscritos que ainda não palpitarão o jogo.
+    Idempotente por jogo+uid+checkpoint (log_key `pregame:{game}:{uid}:{C}`),
+    então cada checkpoint é enviado no máximo 1x por participante.
+
+    Cada checkpoint tem uma tolerância (default 15 min) ao redor, garantindo
+    o disparo mesmo com restarts curtos do servidor ou com o scheduler
+    rodando a cada 5 min.
+    """
+    from .database import session_scope
+    from .models import Game, NotificationLog, PushSubscription
+
+    if not is_push_enabled():
+        return {"sent": 0, "reason": "push_disabled"}
+
+    now = datetime.now()
+    checkpoints = _reminder_checkpoints()
+    tol = _reminder_tolerance_min()
+    horizon = now + timedelta(minutes=max(checkpoints) + tol)
+    expired_endpoints: list[str] = []
+
+    with session_scope() as session:
+        plan = _plan_pregame_reminders(session, now=now, checkpoints=checkpoints, tol=tol)
+        games_count = session.query(Game).filter(Game.kickoff > now, Game.kickoff <= horizon).count()
+
+    if not plan:
+        return {"games": games_count, "sent": 0}
+
+    # Envia fora da sessão (cada send_push é só HTTP); marca o log por checkpoint.
     sent = 0
     with session_scope() as session:
         for uid, payload, log_key in plan:
@@ -270,7 +344,7 @@ def dispatch_pregame_reminders() -> dict:
         for ep in expired_endpoints:
             session.query(PushSubscription).filter_by(endpoint=ep).delete()
 
-    return {"games": len(games), "sent": sent}
+    return {"games": games_count, "sent": sent, "checkpoints": len(plan)}
 
 
 def dispatch_daily_missing_reminders(force: bool = False) -> dict:

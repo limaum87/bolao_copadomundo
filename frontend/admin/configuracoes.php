@@ -107,7 +107,7 @@ require_once __DIR__ . '/../config.php';
             <!-- Notifications Config -->
             <div class="card mb-xl">
                 <h3 class="card-title mb-lg">🔔 Notificações</h3>
-                <p class="text-muted mb-lg">Defina o horário do lembrete diário enviado aos participantes com notificação ativa que ainda não completaram os palpites dos jogos do dia.</p>
+                <p class="text-muted mb-lg">Os participantes com notificação ativa recebem lembretes de palpite <strong>3h, 2h e 1h antes</strong> de cada jogo que ainda não palpitaram, além do lembrete diário abaixo.</p>
                 <form id="notificationsForm">
                     <div class="form-row">
                         <div class="form-group">
@@ -118,6 +118,13 @@ require_once __DIR__ . '/../config.php';
                         </div>
                     </div>
                 </form>
+                <button type="button" class="btn btn-secondary btn-block mt-md" onclick="forceReminders()">
+                    📣 Disparar lembretes de palpite agora
+                </button>
+                <p class="text-muted mt-sm" style="font-size: 0.8rem;">
+                    Executa a mesma rotina do scheduler (3h/2h/1h antes) sob demanda. Só avisa quem ainda não palpitou os jogos da janela atual — útil para testar ou garantir o envio após uma queda do servidor.
+                </p>
+                <div id="remindersResult" style="display:none;" class="mt-md"></div>
             </div>
 
             <!-- Finals Deadline -->
@@ -468,6 +475,37 @@ require_once __DIR__ . '/../config.php';
         }
 
         // Ranking History Backfill
+        async function forceReminders() {
+            const resultDiv = document.getElementById('remindersResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="alert alert-info">⏳ Disparando lembretes...</div>';
+            try {
+                const res = await fetch(`${apiBase}/reminders/force`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.reason === 'push_disabled') {
+                        resultDiv.innerHTML = '<div class="alert alert-warning">⚠️ Push desativado (VAPID não configurado no servidor).</div>';
+                    } else if ((data.sent || 0) === 0 && (data.checkpoints || 0) === 0) {
+                        resultDiv.innerHTML = `<div class="alert alert-info">ℹ️ Nada a enviar agora — não há jogos na janela (3h/2h/1h antes) com participantes sem palpite, ou já foram avisados. Jogos na janela: <strong>${data.games || 0}</strong>.</div>`;
+                    } else {
+                        resultDiv.innerHTML = `<div class="alert alert-success">✅ Lembretes disparados: <strong>${data.sent}</strong> participante(s) notificado(s), ${data.checkpoints} lembrete(s). Jogos na janela: ${data.games || 0}.</div>`;
+                    }
+                    showToast('📣 Lembretes processados', 'success');
+                } else if (res.status === 401) {
+                    return;
+                } else {
+                    resultDiv.innerHTML = '<div class="alert alert-error">Erro ao disparar lembretes</div>';
+                    showToast('Erro ao disparar lembretes', 'error');
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<div class="alert alert-error">Erro de conexão</div>';
+                showToast('Erro de conexão', 'error');
+            }
+        }
+
         async function backfillRanking() {
             if (!confirm('Isso vai recriar todo o histórico do ranking a partir dos jogos finalizados. Continuar?')) {
                 return;

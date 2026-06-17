@@ -1061,6 +1061,21 @@ def ranking_backfill():
         })
 
 
+@app.route("/reminders/force", methods=["POST"])
+@token_required
+def reminders_force():
+    """Dispara os lembretes de palpite (3h/2h/1h antes) imediatamente.
+
+    Executa a MESMA rotina do scheduler automático, mas sob demanda. Útil para
+    testar a notificação sem esperar o próximo ciclo, ou para garantir o
+    disparo após uma indisponibilidade do servidor. Idempotente (respeita o
+    log de checkpoints já enviados).
+    """
+    from .notifications import dispatch_pregame_reminders
+    result = dispatch_pregame_reminders()
+    return jsonify(result)
+
+
 @app.route("/me", methods=["GET"])
 def me():
     """Retorna apenas id e nome do dono do participant_uid.
