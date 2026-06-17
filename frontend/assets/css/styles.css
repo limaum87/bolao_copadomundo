@@ -541,6 +541,60 @@ a:hover {
     background: var(--color-gray-100);
 }
 
+/* Botão de pontos dentro do ranking — largura mínima padrão (desktop). */
+.ranking-table .btn-sm {
+    min-width: 60px;
+}
+
+/* ----- Ranking responsivo (telas estreitas / mobile) -----
+   4 colunas (#, Participante, Variação, Pontos). Em telas pequenas o
+   padding grande + nomes longos + min-widths faziam a tabela estourar
+   (scroll horizontal). Aqui compactamos tudo para caber sem rolar. */
+@media (max-width: 640px) {
+    .ranking-table th,
+    .ranking-table td {
+        padding: 0.5rem 0.4rem;
+        font-size: 0.8125rem;
+    }
+
+    /* Coluna # compacta e centralizada */
+    .ranking-table th:first-child,
+    .ranking-table td:first-child {
+        width: 1.6rem;
+        text-align: center;
+        font-weight: 700;
+        padding-left: 0.45rem;
+    }
+
+    /* Participante: deixa o nome quebrar em várias linhas em vez de
+       empurrar a tabela pra fora da tela (truque max-width:0 p/ table-cell). */
+    .ranking-table td:nth-child(2) {
+        max-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        line-height: 1.2;
+    }
+
+    /* Header "Variação" vira só o símbolo ↕ no mobile */
+    .ranking-table .rk-var-label {
+        display: none;
+    }
+
+    /* Badge de variação compacto */
+    .ranking-table .pos-change {
+        min-width: 0;
+        padding: 2px 5px;
+        font-size: 0.7rem;
+        gap: 1px;
+    }
+
+    /* Botão de pontos menor */
+    .ranking-table .btn-sm {
+        min-width: 42px;
+        padding: 0.25rem 0.45rem;
+    }
+}
+
 /* Modal */
 .modal-overlay {
     position: fixed;

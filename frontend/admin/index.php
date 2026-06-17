@@ -23,7 +23,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606161600">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606171200">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -201,12 +201,12 @@ require_once __DIR__ . '/../config.php';
                 };
 
                 const rankingHtml = scores.length > 0
-                    ? `<table class="table">
+                    ? `<table class="table ranking-table">
                         <thead>
                             <tr>
                                 <th>#</th>
                                 <th>Participante</th>
-                                <th style="text-align:center;" title="Variação de posição em relação ao dia anterior">↕ Variação</th>
+                                <th style="text-align:center;" title="Variação de posição em relação ao dia anterior">↕ <span class="rk-var-label">Variação</span></th>
                                 <th>Pontos</th>
                             </tr>
                         </thead>
@@ -217,7 +217,7 @@ require_once __DIR__ . '/../config.php';
                                     <td>${s.name}</td>
                                     <td style="text-align:center;">${variationBadge(s.variation)}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-outline" style="min-width: 60px; font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
+                                        <button class="btn btn-sm btn-outline" style="font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
                                             ${s.total_points || 0}
                                         </button>
                                     </td>
