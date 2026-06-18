@@ -559,7 +559,6 @@ def login():
 
 
 @app.route("/admin/diagnostics/notifications")
-@token_required
 def admin_diagnostics_notifications():
     """Diagnóstico do lembrete diário 'faltam palpites de hoje'.
 
