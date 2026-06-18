@@ -410,35 +410,18 @@ def _capture_ranking_snapshot(session, target_date, results):
 
 
 def _ranking_as_of(session, target_date):
-    """Ranking (posição + pontos) no fechamento de `target_date`.
+    """Ranking (posição + pontos) considerando APENAS os jogos finalizados
+    com kickoff até `target_date`.
 
-    Fonte de verdade: o snapshot congelado do dia (se existir). Caso não
-    exista snapshot para a data, recalcula considerando APENAS os jogos
-    finalizados com kickoff até `target_date` — fallback robusto para datas
-    sem snapshot (ex.: dia sem jogo antes do backfill cobrir).
+    SEMPRE recalcula a partir dos jogos — não depende de snapshots. Isso
+    garante que o resultado reflita fielmente o estado daquele dia, mesmo se
+    os snapshots do ranking tiverem sido (re)criados depois com pontos já
+    atualizados (o que tornaria pontos/posição iguais em todos os dias e
+    zaria a variação). Determinístico a partir dos jogos finalizados.
 
-    Retorna lista de dicts (ordenada por pontos desc / posição asc):
+    Retorna lista de dicts (ordenada por pontos desc / nome asc):
       { participant_id, name, points, position }   (position é 1-based)
     """
-    rows = (
-        session.query(RankingSnapshot, Participant.name)
-        .join(Participant, RankingSnapshot.participant_id == Participant.id)
-        .filter(RankingSnapshot.snapshot_date == target_date)
-        .all()
-    )
-    if rows:
-        rows.sort(key=lambda r: (r[0].position, r[0].points))
-        return [
-            {
-                "participant_id": snap.participant_id,
-                "name": name,
-                "points": snap.points,
-                "position": snap.position,
-            }
-            for snap, name in rows
-        ]
-
-    # Fallback: recalcular para a data (não há snapshot congelado).
     finished_games = session.query(Game).filter(Game.score_a.isnot(None)).all()
     games_up_to = [
         g for g in finished_games
