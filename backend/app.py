@@ -1485,9 +1485,9 @@ def fix_kickoffs():
     corrections = [
         {"team_a": "Austrália", "team_b": "Turquia", "kickoff": "2026-06-14T01:00:00"},
         {"team_a": "Uzbequistão", "team_b": "Colômbia", "kickoff": "2026-06-17T21:00:00"},
-        {"team_a": "Turquia", "team_b": "Paraguai", "kickoff": "2026-06-19T00:00:00"},
+        {"team_a": "Turquia", "team_b": "Paraguai", "kickoff": "2026-06-20T00:00:00"},
         {"team_a": "Brasil", "team_b": "Haiti", "kickoff": "2026-06-19T21:30:00"},
-        {"team_a": "Tunísia", "team_b": "Japão", "kickoff": "2026-06-20T23:00:00"},
+        {"team_a": "Tunísia", "team_b": "Japão", "kickoff": "2026-06-21T01:00:00"},
         {"team_a": "Egito", "team_b": "Irã", "kickoff": "2026-06-27T00:00:00"},
         {"team_a": "Nova Zelândia", "team_b": "Bélgica", "kickoff": "2026-06-27T00:00:00"},
     ]
