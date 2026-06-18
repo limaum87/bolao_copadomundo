@@ -409,6 +409,60 @@ def _capture_ranking_snapshot(session, target_date, results):
     return True
 
 
+def _ranking_as_of(session, target_date):
+    """Ranking (posição + pontos) no fechamento de `target_date`.
+
+    Fonte de verdade: o snapshot congelado do dia (se existir). Caso não
+    exista snapshot para a data, recalcula considerando APENAS os jogos
+    finalizados com kickoff até `target_date` — fallback robusto para datas
+    sem snapshot (ex.: dia sem jogo antes do backfill cobrir).
+
+    Retorna lista de dicts (ordenada por pontos desc / posição asc):
+      { participant_id, name, points, position }   (position é 1-based)
+    """
+    rows = (
+        session.query(RankingSnapshot, Participant.name)
+        .join(Participant, RankingSnapshot.participant_id == Participant.id)
+        .filter(RankingSnapshot.snapshot_date == target_date)
+        .all()
+    )
+    if rows:
+        rows.sort(key=lambda r: (r[0].position, r[0].points))
+        return [
+            {
+                "participant_id": snap.participant_id,
+                "name": name,
+                "points": snap.points,
+                "position": snap.position,
+            }
+            for snap, name in rows
+        ]
+
+    # Fallback: recalcular para a data (não há snapshot congelado).
+    finished_games = session.query(Game).filter(Game.score_a.isnot(None)).all()
+    games_up_to = [
+        g for g in finished_games
+        if g.kickoff is not None and g.kickoff.date() <= target_date
+    ]
+    results = calculate_scores(
+        participants=session.query(Participant).all(),
+        games=games_up_to,
+        predictions=session.query(Prediction).all(),
+        finals_predictions=session.query(FinalsPrediction).all(),
+        outcome=session.query(TournamentOutcome).get(1),
+        scoring_cfg=get_scoring_config_dict(session.query(ScoringConfig).get(1)),
+    )
+    return [
+        {
+            "participant_id": item["id"],
+            "name": item["name"],
+            "points": item.get("total_points", 0),
+            "position": idx + 1,
+        }
+        for idx, item in enumerate(results)
+    ]
+
+
 def ensure_yesterday_snapshot(now=None):
     """Cria o snapshot de ontem (se ainda não existir) com o ranking atual.
     Idempotente. Usado pelo scheduler em background."""
@@ -958,6 +1012,51 @@ def ranking():
             for item in results
         ])
 
+
+@app.route("/ranking/daily", methods=["GET"])
+def ranking_daily():
+    """Ranking de um dia específico com a variação de posição vs dia anterior.
+
+    Query param:
+      - date: "YYYY-MM-DD" (default: hoje).
+
+    Retorna, do maior para o menor pontuador naquele dia:
+      - name: nome do participante
+      - points: pontuação acumulada até o fim daquele dia
+      - variacao: variação de posição em relação ao dia anterior,
+        formatada como "+1" (subiu), "-2" (desceu) ou "0" (manteve/
+        sem histórico anterior).
+    """
+    date_str = request.args.get("date")
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
+    else:
+        target_date = datetime.now().date()
+
+    with session_scope() as session:
+        today_ranking = _ranking_as_of(session, target_date)
+        prev_ranking = _ranking_as_of(session, target_date - timedelta(days=1))
+        prev_pos = {item["participant_id"]: item["position"] for item in prev_ranking}
+
+        result = []
+        for item in today_ranking:
+            before = prev_pos.get(item["participant_id"])
+            if before is None:
+                variacao = "0"
+            else:
+                # delta = posicao_anterior - posicao_atual
+                #   > 0 : subiu (ex.: "+1")   < 0 : desceu (ex.: "-2")
+                delta = before - item["position"]
+                variacao = f"{delta:+d}" if delta else "0"
+            result.append({
+                "name": item["name"],
+                "points": item["points"],
+                "variacao": variacao,
+            })
+        return jsonify(result)
 
 @app.route("/ranking/snapshot", methods=["POST"])
 @token_required
