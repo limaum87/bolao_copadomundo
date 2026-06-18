@@ -1001,7 +1001,7 @@ def ranking_daily():
     """Ranking de um dia específico com a variação de posição vs dia anterior.
 
     Query param:
-      - date: "YYYY-MM-DD" (default: hoje).
+      - date (ou "data"): "YYYY-MM-DD" (default: hoje).
 
     Retorna, do maior para o menor pontuador naquele dia:
       - name: nome do participante
@@ -1010,7 +1010,7 @@ def ranking_daily():
         formatada como "+1" (subiu), "-2" (desceu) ou "0" (manteve/
         sem histórico anterior).
     """
-    date_str = request.args.get("date")
+    date_str = request.args.get("date") or request.args.get("data")
     if date_str:
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
