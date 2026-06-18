@@ -558,6 +558,143 @@ def login():
     return jsonify({'message': 'Could not verify'}), 401
 
 
+@app.route("/admin/diagnostics/notifications")
+@token_required
+def admin_diagnostics_notifications():
+    """Diagnóstico do lembrete diário 'faltam palpites de hoje'.
+
+    Expõe:
+      - status do fuso horário do processo Python (UTC vs BRT);
+      - hora configurada do lembrete + checkpoints pré-jogo;
+      - para cada notificação daily-missing já enviada: horário (UTC e BRT),
+        jogos do dia considerados ativos pela rotina vs interpretação correta,
+        quem SERIA avisado e quem palpitou tudo (não deveria receber).
+
+    Útil para auditar reclamações do tipo 'recebi aviso mas já tinha palpitado'.
+    """
+    now = datetime.now()
+    utcnow = datetime.utcnow()
+    tz_env = os.environ.get("TZ")
+    running_in_utc = now.replace(microsecond=0) == utcnow.replace(microsecond=0)
+
+    with session_scope() as session:
+        cfg = session.query(ScoringConfig).get(1)
+        daily_hour = (
+            int(cfg.daily_reminder_hour)
+            if cfg and cfg.daily_reminder_hour is not None
+            else int(os.environ.get("BOLAO_DAILY_REMINDER_HOUR", "11"))
+        )
+
+        from .notifications import _reminder_checkpoints
+        checkpoints = _reminder_checkpoints()
+
+        uid_to_p = {p.uid: p for p in session.query(Participant).all()}
+        sub_uids = sorted({
+            r[0] for r in session.query(PushSubscription.participant_uid).distinct().all()
+        })
+
+        # Cache de quem já palpitou (participant_id, game_id) para evitar N queries.
+        predicted_pairs = {
+            (pred.participant_id, pred.game_id)
+            for pred in session.query(Prediction).all()
+        }
+
+        logs = (
+            session.query(NotificationLog)
+            .filter(NotificationLog.log_key.like("daily-missing:%"))
+            .order_by(NotificationLog.created_at)
+            .all()
+        )
+
+        runs = []
+        for log in logs:
+            day_str = log.log_key.split(":", 1)[1]
+            try:
+                day = datetime.strptime(day_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+
+            # created_at é UTC (model usa datetime.utcnow).
+            fired_at = log.created_at
+            fired_at_brt = fired_at - timedelta(hours=3)
+            start_of_day = datetime.combine(day, datetime.min.time())
+            end_of_day = datetime.combine(day, datetime.max.time())
+
+            games = (
+                session.query(Game)
+                .filter(Game.kickoff >= start_of_day, Game.kickoff <= end_of_day)
+                .order_by(Game.kickoff)
+                .all()
+            )
+            games_that_day = [
+                {
+                    "id": g.id,
+                    "teams": f"{g.team_a} x {g.team_b}",
+                    "kickoff": g.kickoff.strftime("%Y-%m-%d %H:%M"),
+                    "has_result": g.score_a is not None,
+                }
+                for g in games
+            ]
+
+            # O que a rotina fez: compara kickoff (BRT) > now (UTC) -> reproduz o
+            # bug quando o processo está em UTC.
+            active_routine = [g for g in games if g.kickoff > fired_at]
+            # Interpretação correta: ambos em BRT.
+            active_correct = [g for g in games if g.kickoff > fired_at_brt]
+
+            targeted = []
+            complete = []
+            for uid in sub_uids:
+                p = uid_to_p.get(uid)
+                if not p:
+                    continue
+                missing = [
+                    g.id
+                    for g in active_routine
+                    if (p.id, g.id) not in predicted_pairs
+                ]
+                if missing:
+                    targeted.append({"name": p.name, "uid": uid[:8], "missing": missing})
+                else:
+                    complete.append(p.name)
+
+            runs.append({
+                "log_key": log.log_key,
+                "fired_at_utc": fired_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "fired_at_brt": fired_at_brt.strftime("%Y-%m-%d %H:%M:%S"),
+                "configured_hour_brt": daily_hour,
+                "fired_on_time_brt": fired_at_brt.hour >= daily_hour,
+                "games_that_day": games_that_day,
+                "games_active_per_routine": [g.id for g in active_routine],
+                "games_active_correct_brt": [g.id for g in active_correct],
+                "games_wrongly_excluded": [
+                    g.id for g in active_correct if g not in active_routine
+                ],
+                "would_be_targeted": targeted,
+                "subscribed_but_completed_all": complete,
+            })
+
+    return jsonify({
+        "timezone": {
+            "tz_env": tz_env,
+            "python_now": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "python_utcnow": utcnow.strftime("%Y-%m-%d %H:%M:%S"),
+            "running_in_utc": running_in_utc,
+            "tz_applied_to_process": not running_in_utc,
+            "note": (
+                "Processo em UTC: o lembrete dispara ~3h cedo (11h UTC = 08h BRT) "
+                "e jogos matinais (BRT) podem ser excluídos da checagem."
+                if running_in_utc
+                else "Processo em BRT (TZ aplicado): lembrete dispara no horário correto."
+            ),
+        },
+        "daily_reminder_hour_brt": daily_hour,
+        "pregame_checkpoints_min": checkpoints,
+        "subscribed_participant_count": len(sub_uids),
+        "daily_missing_runs": runs,
+    })
+
+
 @app.route("/change-password", methods=["POST"])
 @token_required
 def change_password():
