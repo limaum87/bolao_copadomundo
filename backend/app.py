@@ -15,7 +15,7 @@ from .database import engine, session_scope, DATABASE_URL
 from .models import (AdminUser, Base, FinalsPrediction, Game, NotificationLog,
                     Participant, Prediction, PushSubscription, RankingSnapshot, ScoringConfig,
                     TournamentOutcome)
-from .scoring import calculate_scores, score_prediction, get_scoring_config_dict
+from .scoring import calculate_scores, calculate_daily_scores, score_prediction, get_scoring_config_dict
 
 
 # Derive DB_PATH from the same DATABASE_URL used by the ORM
@@ -1132,6 +1132,62 @@ def ranking():
         ])
 
 
+@app.route("/scores/daily", methods=["GET"])
+def scores_daily():
+    """Ranking dos pontos ganhos em um dia específico ("melhor do dia").
+
+    Considera APENAS os jogos finalizados cujo kickoff caiu no dia escolhido
+    — não acumula rodadas anteriores nem conta palpites de finais (que não
+    têm um dia associado). É o ranking de performance daquele dia.
+
+    Query param:
+      - date (ou "data"): "YYYY-MM-DD". Default: o dia mais recente que
+        teve ao menos um jogo finalizado. Se ainda não há jogos
+        finalizados, usa a data de hoje (ranking vazio).
+
+    Retorna:
+      - date: o dia efetivamente usado (ISO)
+      - available_dates: lista de dias (desc) com jogos finalizados, para
+        alimentar o seletor de data no front
+      - ranking: [{ id, name, total_points }] ordenado (maior primeiro)
+    """
+    date_str = request.args.get("date") or request.args.get("data")
+
+    with session_scope() as session:
+        # Dias que tiveram ao menos um jogo finalizado (pela data do kickoff).
+        finished_games = session.query(Game).filter(Game.score_a.isnot(None)).all()
+        available = sorted(
+            {g.kickoff.date() for g in finished_games if g.kickoff is not None},
+            reverse=True,
+        )
+
+        if date_str:
+            try:
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
+        elif available:
+            target_date = available[0]
+        else:
+            target_date = datetime.now().date()
+
+        config = session.query(ScoringConfig).get(1)
+        scoring_cfg = get_scoring_config_dict(config)
+        results = calculate_daily_scores(
+            participants=session.query(Participant).all(),
+            games=session.query(Game).all(),
+            predictions=session.query(Prediction).all(),
+            target_date=target_date,
+            scoring_cfg=scoring_cfg,
+        )
+
+        return jsonify({
+            "date": target_date.isoformat(),
+            "available_dates": [d.isoformat() for d in available],
+            "ranking": results,
+        })
+
+
 @app.route("/ranking/daily", methods=["GET"])
 def ranking_daily():
     """Ranking de um dia específico com a variação de posição vs dia anterior.
@@ -1324,6 +1380,23 @@ def score_details(participant_id: int):
         outcome = session.query(TournamentOutcome).get(1)
         config = session.query(ScoringConfig).get(1)
         scoring_cfg = get_scoring_config_dict(config)
+
+        # Filtro de dia (opcional): quando passado, mostra só os pontos ganhos
+        # naquele dia (modo "Do Dia" do ranking) e ignora finais (que não têm
+        # um dia associado). Sem `date`, mostra o histórico completo.
+        date_str = request.args.get("date")
+        if date_str:
+            try:
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
+            games = [
+                g for g in games
+                if g.score_a is not None
+                and g.kickoff is not None
+                and g.kickoff.date() == target_date
+            ]
+            outcome = None
 
         from .scoring import get_score_breakdown
         breakdown = get_score_breakdown(

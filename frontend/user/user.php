@@ -213,7 +213,15 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
             <div id="rankingView" style="display: none;">
                 <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
                 <div class="card">
-                    <h3 class="card-title mb-lg">🏆 Ranking Geral</h3>
+                    <h3 class="card-title mb-lg" id="rankingTitle">🏆 Ranking Geral</h3>
+                    <!-- Filtro de modo: Total x Do Dia -->
+                    <div class="ranking-filters" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom: 16px;">
+                        <button class="btn btn-sm btn-primary rk-mode-btn" data-mode="total" onclick="setRankingMode('total')">🏆 Total</button>
+                        <button class="btn btn-sm btn-outline rk-mode-btn" data-mode="daily" onclick="setRankingMode('daily')">📅 Do Dia</button>
+                        <div id="rankingDateWrap" style="display:none; margin-left:8px;">
+                            <select id="rankingDateSel" class="form-input" style="width:auto; padding:6px 10px;" onchange="setRankingDate(this.value)"></select>
+                        </div>
+                    </div>
                     <div id="rankingContainer">
                         <div class="loading-container">
                             <div class="spinner"></div>
@@ -657,6 +665,16 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                 document.getElementById('finalsView').style.display = 'block';
             } else if (viewName === 'ranking') {
                 document.getElementById('rankingView').style.display = 'block';
+                // Sempre começa no modo "Total" ao entrar na view (estado previsível).
+                rankingMode = 'total';
+                rankingDate = null;
+                document.querySelectorAll('.rk-mode-btn').forEach(btn => {
+                    btn.className = btn.dataset.mode === 'total'
+                        ? 'btn btn-sm btn-primary rk-mode-btn'
+                        : 'btn btn-sm btn-outline rk-mode-btn';
+                });
+                document.getElementById('rankingDateWrap').style.display = 'none';
+                document.getElementById('rankingTitle').textContent = '🏆 Ranking Geral';
                 loadRanking();
             }
         }
@@ -681,61 +699,157 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
         }
 
         // Load Ranking
+        // Modo do ranking: 'total' (acumulado) ou 'daily' (pontos do dia).
+        let rankingMode = 'total';
+        let rankingDate = null;       // ISO YYYY-MM-DD; null = o dia mais recente com jogos
+        let dailyAvailableDates = []; // cache dos dias com jogos finalizados
+
+        function setRankingMode(mode) {
+            if (rankingMode === mode) return;
+            rankingMode = mode;
+            document.querySelectorAll('.rk-mode-btn').forEach(btn => {
+                btn.className = btn.dataset.mode === mode
+                    ? 'btn btn-sm btn-primary rk-mode-btn'
+                    : 'btn btn-sm btn-outline rk-mode-btn';
+            });
+            document.getElementById('rankingDateWrap').style.display = mode === 'daily' ? 'flex' : 'none';
+            document.getElementById('rankingTitle').textContent = mode === 'daily' ? '🏆 Ranking do Dia' : '🏆 Ranking Geral';
+            loadRanking();
+        }
+
+        function setRankingDate(date) {
+            rankingDate = date || null;
+            loadRanking();
+        }
+
         async function loadRanking() {
+            const container = document.getElementById('rankingContainer');
+            container.innerHTML = '<div class="loading-container"><div class="spinner"></div></div>';
             try {
-                const res = await fetch(`${apiBase}/scores`);
-                const scores = await res.json();
-
-                const rankingHtml = scores.length > 0
-                    ? `<table class="table ranking-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Participante</th>
-                                <th style="text-align:center;" title="Variação de posição em relação ao dia anterior">↕ <span class="rk-var-label">Variação</span></th>
-                                <th>Pontos</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${scores.map((s, i) => `
-                                <tr class="${s.id === myId ? 'highlight-row' : ''}" style="${s.id === myId ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
-                                    <td>${i + 1}</td>
-                                    <td>
-                                        ${s.name}
-                                        ${s.id === myId ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
-                                    </td>
-                                    <td style="text-align:center;">${variationBadge(s.variation)}</td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline" style="font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
-                                            ${s.total_points || 0}
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>`
-                    : '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">Nenhum ranking disponível ainda</div></div>';
-
-                document.getElementById('rankingContainer').innerHTML = rankingHtml;
+                if (rankingMode === 'daily') {
+                    await loadDailyRanking(container);
+                } else {
+                    await loadTotalRanking(container);
+                }
             } catch (error) {
                 console.error('Error loading ranking:', error);
-                document.getElementById('rankingContainer').innerHTML = '<div class="alert alert-error">Erro ao carregar ranking</div>';
+                container.innerHTML = '<div class="alert alert-error">Erro ao carregar ranking</div>';
             }
+        }
+
+        async function loadTotalRanking(container) {
+            const res = await fetch(`${apiBase}/scores`);
+            const scores = await res.json();
+
+            container.innerHTML = scores.length > 0
+                ? `<table class="table ranking-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Participante</th>
+                            <th style="text-align:center;" title="Variação de posição em relação ao dia anterior">↕ <span class="rk-var-label">Variação</span></th>
+                            <th>Pontos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${scores.map((s, i) => `
+                            <tr class="${s.id === myId ? 'highlight-row' : ''}" style="${s.id === myId ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
+                                <td>${i + 1}</td>
+                                <td>
+                                    ${s.name}
+                                    ${s.id === myId ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
+                                </td>
+                                <td style="text-align:center;">${variationBadge(s.variation)}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline" style="font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}')">
+                                        ${s.total_points || 0}
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`
+                : '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">Nenhum ranking disponível ainda</div></div>';
+        }
+
+        async function loadDailyRanking(container) {
+            const qs = rankingDate ? `?date=${encodeURIComponent(rankingDate)}` : '';
+            const res = await fetch(`${apiBase}/scores/daily${qs}`);
+            const data = await res.json();
+
+            // Atualiza o seletor de dias com os disponíveis
+            dailyAvailableDates = data.available_dates || [];
+            const sel = document.getElementById('rankingDateSel');
+            const current = data.date;
+            if (dailyAvailableDates.length > 0) {
+                sel.innerHTML = dailyAvailableDates.map(d =>
+                    `<option value="${d}" ${d === current ? 'selected' : ''}>${formatDailyOption(d)}</option>`
+                ).join('');
+                rankingDate = current;
+            } else {
+                sel.innerHTML = '<option value="">Sem jogos finalizados</option>';
+            }
+
+            const rows = data.ranking || [];
+            container.innerHTML = rows.length > 0
+                ? `<table class="table ranking-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Participante</th>
+                            <th title="Pontos ganhos nos jogos finalizados neste dia">Pts do dia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map((s, i) => `
+                            <tr class="${s.id === myId ? 'highlight-row' : ''}" style="${s.id === myId ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
+                                <td>${i + 1}</td>
+                                <td>
+                                    ${s.name}
+                                    ${s.id === myId ? '<span class="badge badge-info" style="margin-left: 8px;">Você</span>' : ''}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline" style="font-weight: 800;" onclick="openBreakdownModal(${s.id}, '${s.name}', '${current}')">
+                                        ${s.total_points || 0}
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <p class="text-muted" style="font-size: 0.85rem; margin-top: 12px;">Mostra apenas os pontos ganhos nos jogos finalizados em <strong>${formatDailyOption(current)}</strong>. Não acumula rodadas anteriores.</p>`
+                : '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">Nenhum jogo finalizado neste dia ainda</div></div>';
+        }
+
+        // Formata "YYYY-MM-DD" -> "DD/MM/YYYY (Sáb)" para o seletor e rodapé.
+        function formatDailyOption(iso) {
+            if (!iso) return '';
+            const [y, m, d] = iso.split('-').map(Number);
+            const dt = new Date(y, m - 1, d);
+            const dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+            const dd = String(d).padStart(2, '0');
+            const mm = String(m).padStart(2, '0');
+            return `${dd}/${mm}/${y} (${dias[dt.getDay()]})`;
         }
 
         // Score Breakdown
         const breakdownModal = document.getElementById('scoreBreakdownModal');
 
-        async function openBreakdownModal(participantId, name) {
-            document.getElementById('breakdownTitle').textContent = `Palpites de ${name}`;
+        async function openBreakdownModal(participantId, name, date) {
+            const isDaily = !!date;
+            document.getElementById('breakdownTitle').textContent = isDaily
+                ? `Palpites de ${name} — ${formatDailyOption(date)}`
+                : `Palpites de ${name}`;
             document.getElementById('breakdownLoading').style.display = 'block';
+            document.getElementById('breakdownLoading').innerHTML = '<div class="spinner"></div>';
             document.getElementById('breakdownContent').style.display = 'none';
             document.getElementById('breakdownList').innerHTML = '';
 
             breakdownModal.classList.add('active');
 
             try {
-                const res = await fetch(`${apiBase}/scores/${participantId}/details`);
+                const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+                const res = await fetch(`${apiBase}/scores/${participantId}/details${qs}`);
                 const data = await res.json();
 
                 document.getElementById('breakdownLoading').style.display = 'none';

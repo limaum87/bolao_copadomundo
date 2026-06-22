@@ -112,6 +112,55 @@ def calculate_scores(
     return results
 
 
+def calculate_daily_scores(
+    participants: List[Participant],
+    games: List[Game],
+    predictions: List[Prediction],
+    target_date,
+    scoring_cfg: Optional[Dict[str, int]] = None,
+) -> List[Dict]:
+    """Ranking dos pontos ganhos APENAS nos jogos finalizados cujo kickoff
+    caiu em `target_date` (compara só a data, ignorando hora/fuso).
+
+    É o ranking de "melhor do dia": não acumula rodadas anteriores nem conta
+    palpites de finais (que não têm um dia associado). Determinístico a
+    partir dos jogos finalizados daquele dia.
+
+    Retorna lista ordenada por pontos (desc) e nome (asc):
+      { id, name, total_points }
+    """
+    cfg = scoring_cfg or DEFAULT_SCORING
+
+    day_games = [
+        g for g in games
+        if g.score_a is not None
+        and g.kickoff is not None
+        and g.kickoff.date() == target_date
+    ]
+    game_lookup = {g.id: g for g in day_games}
+
+    predictions_by_participant: Dict[int, List[Prediction]] = {}
+    for pred in predictions:
+        if pred.game_id in game_lookup:
+            predictions_by_participant.setdefault(pred.participant_id, []).append(pred)
+
+    results = []
+    for participant in participants:
+        total = 0
+        for pred in predictions_by_participant.get(participant.id, []):
+            game = game_lookup.get(pred.game_id)
+            if game:
+                total += score_prediction(pred, game, scoring_cfg=cfg)
+        results.append({
+            "id": participant.id,
+            "name": participant.name,
+            "total_points": total,
+        })
+
+    results.sort(key=lambda item: (-item["total_points"], item["name"].lower()))
+    return results
+
+
 def get_score_breakdown(
     participant: Participant,
     games: List[Game],
