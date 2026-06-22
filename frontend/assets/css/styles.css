@@ -1625,3 +1625,99 @@ a:hover {
     margin: 0 2px;
     color: var(--color-white);
 }
+
+/* ============================================
+   MENU DE AÇÕES (dropdown) — usado na tabela de jogos do admin.
+   Consolida os botões (Palpites / Placar / Excluir) num único,
+   evitando scroll horizontal na tabela em telas pequenas.
+   ============================================ */
+.actions-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.actions-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    white-space: nowrap;
+}
+
+.actions-dropdown {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 200px;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    z-index: 200;
+}
+
+.actions-dropdown.open {
+    display: block;
+}
+
+.actions-dropdown button,
+.actions-dropdown a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    background: none;
+    border: none;
+    border-top: 1px solid var(--color-gray-100);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-align: left;
+    text-decoration: none;
+    color: var(--color-dark);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.actions-dropdown button:first-child,
+.actions-dropdown a:first-child {
+    border-top: none;
+}
+
+.actions-dropdown button:hover,
+.actions-dropdown a:hover {
+    background: var(--color-gray-100);
+}
+
+.actions-dropdown .action-danger {
+    color: var(--color-error);
+}
+
+.actions-dropdown .action-danger:hover {
+    background: rgba(245, 101, 101, 0.12);
+}
+
+.actions-dropdown .action-divider {
+    height: 1px;
+    background: var(--color-gray-100);
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    border: none;
+}
+
+/* Estado ativo do botão de filtro "Só jogos futuros" */
+.filter-active {
+    background: linear-gradient(135deg, var(--color-green) 0%, var(--color-green-dark) 100%) !important;
+    color: var(--color-white) !important;
+    border-color: transparent !important;
+}
+
+/* Em telas pequenas esconde a coluna ID para reduzir o scroll lateral */
+@media (max-width: 768px) {
+    .col-id {
+        display: none;
+    }
+}

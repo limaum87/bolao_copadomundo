@@ -23,7 +23,7 @@ require_once __DIR__ . '/../config.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/styles.css?v=202606171200">
+    <link rel="stylesheet" href="/assets/css/styles.css?v=202606221200">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.min.css">
 </head>
 
@@ -79,15 +79,18 @@ require_once __DIR__ . '/../config.php';
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">⚽ Lista de Jogos</h3>
-                    <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
                         <span id="gamesCount" class="badge badge-info"></span>
+                        <button class="btn btn-sm btn-outline" id="futureOnlyBtn" onclick="toggleFutureOnly()" title="Mostrar apenas jogos que ainda vão começar">
+                            🔮 Só futuros
+                        </button>
                         <input type="file" id="importFile" accept=".json" style="display: none;">
                         <button class="btn btn-sm btn-secondary"
                             onclick="document.getElementById('importFile').click()">
-                            📥 Importar JSON
+                            📥 Importar
                         </button>
                         <button class="btn btn-sm btn-success" onclick="syncResults()" id="syncBtn">
-                            🔄 Sincronizar ESPN
+                            🔄 ESPN
                         </button>
                         <button class="btn btn-sm btn-danger" onclick="deleteAllGames()">
                             🗑️ Apagar Todos
@@ -98,10 +101,10 @@ require_once __DIR__ . '/../config.php';
                     <table class="table" id="gamesTable">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th class="col-id">ID</th>
                                 <th>Data/Hora</th>
                                 <th>Jogo</th>
-                                <th>Placar Final</th>
+                                <th>Placar</th>
                                 <th>Status</th>
                                 <th>Ações</th>
                             </tr>
@@ -201,6 +204,10 @@ require_once __DIR__ . '/../config.php';
         const apiBase = '<?= $apiBase ?>';
         const token = getAdminToken();
 
+        // Estado da lista de jogos (cache local p/ permitir refiltrar sem refetch)
+        let allGames = [];
+        let futureOnly = false;
+
         function formatDate(isoString) {
             const date = new Date(isoString);
             return date.toLocaleDateString('pt-BR', {
@@ -219,55 +226,129 @@ require_once __DIR__ . '/../config.php';
         async function loadGames() {
             try {
                 const res = await fetch(`${apiBase}/games`);
-                const games = await res.json();
-
-                document.getElementById('gamesCount').textContent = `${games.length} jogos`;
-
-                const tbody = document.querySelector('#gamesTable tbody');
-                tbody.innerHTML = games.map(game => {
-                    const isOpen = isGameOpen(game.kickoff);
-                    const hasScore = game.score_a !== null && game.score_b !== null;
-
-                    return `
-                        <tr>
-                            <td>${game.id}</td>
-                            <td>${formatDate(game.kickoff)}</td>
-                            <td>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    ${getTeamHtml(game.team_a)} <span>×</span> ${getTeamHtml(game.team_b)}
-                                </div>
-                            </td>
-                            <td>
-                                ${hasScore
-                            ? `<span style="font-size: 1.25rem; font-weight: 700;">${game.score_a} × ${game.score_b}</span>`
-                            : '<span class="text-muted">-</span>'
-                        }
-                            </td>
-                            <td>
-                                <span class="badge ${isOpen ? 'badge-success' : 'badge-warning'}">
-                                    ${isOpen ? 'Aberto' : 'Encerrado'}
-                                </span>
-                            </td>
-                            <td>
-                                <div class="flex gap-sm">
-                                    <button class="btn btn-sm btn-outline" onclick="openGamePredictionsModal(${game.id}, '${game.team_a}', '${game.team_b}')" title="Ver palpites deste jogo">
-                                        👁️ Palpites
-                                    </button>
-                                    <button class="btn btn-sm btn-primary" onclick="openScoreModal(${game.id}, '${game.team_a}', '${game.team_b}', ${game.score_a ?? 'null'}, ${game.score_b ?? 'null'})">
-                                        📝 Placar
-                                    </button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteGame(${game.id})">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-
+                allGames = await res.json();
+                renderGames();
             } catch (error) {
                 console.error('Error loading games:', error);
                 showToast('Erro ao carregar jogos', 'error');
+            }
+        }
+
+        function renderGames() {
+            const games = futureOnly ? allGames.filter(g => isGameOpen(g.kickoff)) : allGames;
+
+            document.getElementById('gamesCount').textContent =
+                futureOnly ? `${games.length} futuros` : `${games.length} jogos`;
+
+            const tbody = document.querySelector('#gamesTable tbody');
+            if (games.length === 0) {
+                tbody.innerHTML = futureOnly
+                    ? '<tr><td colspan="6" class="text-center text-muted" style="padding: 2rem;">Nenhum jogo futuro 🎉</td></tr>'
+                    : '<tr><td colspan="6" class="text-center text-muted" style="padding: 2rem;">Nenhum jogo cadastrado</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = games.map(game => {
+                const isOpen = isGameOpen(game.kickoff);
+                const hasScore = game.score_a !== null && game.score_b !== null;
+                const teamA = (game.team_a || '').replace(/'/g, "\\'");
+                const teamB = (game.team_b || '').replace(/'/g, "\\'");
+                const scoreA = game.score_a ?? 'null';
+                const scoreB = game.score_b ?? 'null';
+
+                return `
+                    <tr>
+                        <td class="col-id">${game.id}</td>
+                        <td>${formatDate(game.kickoff)}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                ${getTeamHtml(game.team_a)} <span>×</span> ${getTeamHtml(game.team_b)}
+                            </div>
+                        </td>
+                        <td>
+                            ${hasScore
+                                ? `<span style="font-size: 1.25rem; font-weight: 700;">${game.score_a} × ${game.score_b}</span>`
+                                : '<span class="text-muted">-</span>'
+                            }
+                        </td>
+                        <td>
+                            <span class="badge ${isOpen ? 'badge-success' : 'badge-warning'}">
+                                ${isOpen ? 'Aberto' : 'Encerrado'}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="actions-menu">
+                                <button class="btn btn-sm btn-outline actions-trigger" onclick="toggleActionsMenu(event, ${game.id})" aria-haspopup="true" aria-expanded="false">
+                                    ⋯ Ações
+                                </button>
+                                <div class="actions-dropdown" id="actions-dropdown-${game.id}">
+                                    <button onclick="runAction('palpites', ${game.id}, '${teamA}', '${teamB}')">
+                                        👁️ Ver Palpites
+                                    </button>
+                                    <button onclick="runAction('placar', ${game.id}, '${teamA}', '${teamB}', ${scoreA}, ${scoreB})">
+                                        📝 Atualizar Placar
+                                    </button>
+                                    <span class="action-divider"></span>
+                                    <button class="action-danger" onclick="runAction('excluir', ${game.id})">
+                                        🗑️ Excluir Jogo
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ---- Filtro "Só jogos futuros" ----
+        function toggleFutureOnly() {
+            futureOnly = !futureOnly;
+            const btn = document.getElementById('futureOnlyBtn');
+            if (futureOnly) {
+                btn.classList.add('filter-active');
+                btn.textContent = '🔮 Mostrando só futuros';
+            } else {
+                btn.classList.remove('filter-active');
+                btn.textContent = '🔮 Só futuros';
+            }
+            renderGames();
+        }
+
+        // ---- Menu de ações (dropdown) ----
+        function toggleActionsMenu(event, id) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('actions-dropdown-' + id);
+            const wasOpen = dropdown.classList.contains('open');
+            closeAllActionMenus();
+            if (!wasOpen) {
+                dropdown.classList.add('open');
+                dropdown.previousElementSibling.setAttribute('aria-expanded', 'true');
+            }
+        }
+
+        function closeAllActionMenus() {
+            document.querySelectorAll('.actions-dropdown.open').forEach(d => {
+                d.classList.remove('open');
+                d.previousElementSibling && d.previousElementSibling.setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        // Fecha o menu ao clicar fora
+        document.addEventListener('click', () => closeAllActionMenus());
+
+        // Encaminha a ação escolhida no dropdown para a função original e fecha o menu
+        function runAction(action, gameId, teamA, teamB, scoreA, scoreB) {
+            closeAllActionMenus();
+            switch (action) {
+                case 'palpites':
+                    openGamePredictionsModal(gameId, teamA, teamB);
+                    break;
+                case 'placar':
+                    openScoreModal(gameId, teamA, teamB, scoreA, scoreB);
+                    break;
+                case 'excluir':
+                    deleteGame(gameId);
+                    break;
             }
         }
 
