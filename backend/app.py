@@ -1689,10 +1689,14 @@ def live_matches():
         if live_games:
             break  # Se já tem jogos ao vivo, não precisa de amanhã
 
-    # Busca palpites do jogo ao vivo (se houver)
-    predictions_for_live = []
+    # Busca palpites de cada jogo ao vivo (se houver).
+    # IMPORTANTE: a lista de palpites deve ser própria de cada jogo.
+    # Antes ela era declarada fora do loop e acumulava palpites de todos os
+    # jogos ao vivo, fazendo cada jogo exibir palpites somados (bug quando há
+    # mais de um jogo ao vivo simultâneo, ex: jogo interrompido e retomado).
     with session_scope() as session:
         for lg in live_games:
+            lg_preds = []
             # Encontra o game_id no bolão
             game = session.query(Game).filter(
                 ((Game.team_a == lg["home"]) & (Game.team_b == lg["away"])) |
@@ -1709,12 +1713,12 @@ def live_matches():
                         ga, gb = p.goals_a, p.goals_b
                     else:
                         ga, gb = p.goals_b, p.goals_a
-                    predictions_for_live.append({
+                    lg_preds.append({
                         "participant_name": participant.name if participant else "?",
                         "goals_a": ga,
                         "goals_b": gb,
                     })
-                lg["predictions"] = predictions_for_live
+            lg["predictions"] = lg_preds
 
     return {
         "live": live_games,

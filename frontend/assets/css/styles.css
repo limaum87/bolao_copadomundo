@@ -1361,6 +1361,17 @@ a:hover {
     font-size: var(--font-size-base);
 }
 
+/* Divisor entre jogos quando há mais de um ao vivo simultaneamente */
+.live-divider {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    margin: var(--space-lg) 0;
+}
+
+.live-game {
+    /* wrapper de cada jogo ao vivo */
+}
+
 @media (max-width: 768px) {
     .live-card {
         padding: var(--space-md);

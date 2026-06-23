@@ -904,42 +904,45 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                 const nextGame = data.next || null;
 
                 if (liveGames.length > 0) {
-                    // Jogo AO VIVO — mostra placar + palpites
-                    const g = liveGames[0];
-                    const preds = g.predictions || [];
-                    let predsHtml = '';
-                    if (preds.length > 0) {
-                        predsHtml = `<div class="live-predictions">
-                            <div class="live-predictions-title">🎯 Palpites do Bolão</div>
-                            <div class="live-predictions-grid">
-                                ${preds.map(p => `
-                                    <div class="live-prediction-item">
-                                        <span class="live-prediction-name">${p.participant_name}</span>
-                                        <span class="live-prediction-score">${p.goals_a} × ${p.goals_b}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>`;
-                    } else {
-                        predsHtml = '<div class="text-muted text-center" style="padding: 8px; font-size: 0.85rem;">Nenhum palpite ainda</div>';
-                    }
+                    // Um ou mais jogos AO VIVO — mostra cada um com placar + palpites
+                    const gamesHtml = liveGames.map(g => {
+                        const preds = g.predictions || [];
+                        let predsHtml = '';
+                        if (preds.length > 0) {
+                            predsHtml = `<div class="live-predictions">
+                                <div class="live-predictions-title">🎯 Palpites do Bolão</div>
+                                <div class="live-predictions-grid">
+                                    ${preds.map(p => `
+                                        <div class="live-prediction-item">
+                                            <span class="live-prediction-name">${p.participant_name}</span>
+                                            <span class="live-prediction-score">${p.goals_a} × ${p.goals_b}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>`;
+                        } else {
+                            predsHtml = '<div class="text-muted text-center" style="padding: 8px; font-size: 0.85rem;">Nenhum palpite ainda</div>';
+                        }
 
-                    content.innerHTML = `
-                        <div class="live-header">
-                            <span class="live-badge-live">🔴 AO VIVO</span>
-                            <span class="live-clock">${g.clock || ''}</span>
-                        </div>
-                        <div class="live-score-section">
-                            ${liveTeamHtml(g.home)}
-                            <div class="live-score-box">
-                                <span class="live-score-num">${g.score_a}</span>
-                                <span class="live-score-x">×</span>
-                                <span class="live-score-num">${g.score_b}</span>
+                        return `<div class="live-game">
+                            <div class="live-header">
+                                <span class="live-badge-live">🔴 AO VIVO</span>
+                                <span class="live-clock">${g.clock || ''}</span>
                             </div>
-                            ${liveTeamHtml(g.away)}
-                        </div>
-                        ${predsHtml}
-                    `;
+                            <div class="live-score-section">
+                                ${liveTeamHtml(g.home)}
+                                <div class="live-score-box">
+                                    <span class="live-score-num">${g.score_a}</span>
+                                    <span class="live-score-x">×</span>
+                                    <span class="live-score-num">${g.score_b}</span>
+                                </div>
+                                ${liveTeamHtml(g.away)}
+                            </div>
+                            ${predsHtml}
+                        </div>`;
+                    }).join('<hr class="live-divider">');
+
+                    content.innerHTML = gamesHtml;
                     card.className = 'live-card live-card-active';
                     card.style.display = 'block';
                 } else if (nextGame) {
