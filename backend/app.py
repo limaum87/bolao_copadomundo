@@ -59,6 +59,20 @@ def ensure_db_exists():
                 'ALTER TABLE scoring_config ADD COLUMN daily_reminder_hour INTEGER NOT NULL DEFAULT %d' % init_hour
             )
             conn.commit()
+
+        # games.status: scheduled | live | finished
+        # Permite ao poller ao vivo distinguir placar parcial (live) do placar
+        # final travado (finished), movendo o ranking em tempo real durante os
+        # jogos sem poluir a pontuação oficial.
+        cursor.execute("PRAGMA table_info(games)")
+        game_cols = [col[1] for col in cursor.fetchall()]
+        if 'status' not in game_cols:
+            cursor.execute(
+                "ALTER TABLE games ADD COLUMN status VARCHAR NOT NULL DEFAULT 'scheduled'"
+            )
+            # Backfill: jogos que já têm placar -> finished; demais -> scheduled
+            cursor.execute("UPDATE games SET status='finished' WHERE score_a IS NOT NULL")
+            conn.commit()
         conn.close()
     except Exception:
         pass
@@ -221,6 +235,7 @@ def _do_sync(now=None):
                     continue
                 game.score_a = score_a
                 game.score_b = score_b
+                game.status = "finished"
                 all_results.append({
                     "status": "corrected" if was_corrected else "updated",
                     "game_id": game_id,
@@ -270,6 +285,220 @@ def start_sync_scheduler():
 
 
 start_sync_scheduler()
+
+
+# ---------------------------------------------------------------------------
+# Live scheduler (alta frequência, default 30s) — ranking ao vivo
+# ---------------------------------------------------------------------------
+# Diferente do _do_sync horário (que só trava resultados no FT), este poller
+# atualiza o PLACAR PARCIAL durante o jogo (state=in) para que o ranking se
+# mova em tempo real. Marca status='live' para o parcial e 'finished' no FT.
+#
+# Proteções:
+#   - Só busca na ESPN quando há jogo "em janela" (kickoff <= agora E
+#     status != 'finished'). Sem jogo em andamento, dorme sem chamar a ESPN.
+#   - 🔒 Nunca toca em jogos futuros (kickoff > agora).
+#   - Push de resultado (🏁) só dispara no FT (updated/corrected). As
+#     atualizações ao vivo usam o status interno 'live_updated' (fora do
+#     gatilho do push), então o aviso de resultado sai uma única vez, no fim.
+# ---------------------------------------------------------------------------
+
+LIVE_INTERVAL_SECONDS = int(os.environ.get("BOLAO_LIVE_INTERVAL", "30"))
+_live_started = False
+
+
+def _do_live_sync(now=None):
+    """Sincronização AO VIVO: grava o placar parcial durante o jogo e trava o
+    final assim que a ESPN confirma FT, para o ranking se mover em tempo real.
+
+    Janela: jogos com kickoff <= now E status != 'finished'.
+
+    Retorna lista de dicts; campo 'status' interno:
+      - 'live_updated'        : placar parcial gravado/atualizado (NÃO dispara push)
+      - 'updated'/'corrected' : placar FINAL travado (dispara push de resultado)
+      - 'already_correct' / 'not_found'
+    """
+    from .sync_results import fetch_espn_games, parse_espn_event
+
+    now = now or datetime.now()
+
+    # 1. Snapshot read-only dos jogos em janela (kickoff <= now, não finished)
+    with session_scope() as session:
+        in_window = [
+            {
+                "id": g.id,
+                "team_a": g.team_a,
+                "team_b": g.team_b,
+                "kickoff": g.kickoff,
+                "score_a": g.score_a,
+                "score_b": g.score_b,
+                "status": g.status or "scheduled",
+            }
+            for g in session.query(Game).all()
+            if g.kickoff is not None
+            and g.kickoff <= now
+            and (g.status or "scheduled") != "finished"
+        ]
+
+    if not in_window:
+        return []
+
+    for g in in_window:
+        g["matched"] = False
+
+    # 2. Datas a checar (dia do kickoff +/- 1 dia p/ tolerar fuso UTC vs BRT)
+    dates_to_check = set()
+    for g in in_window:
+        day = g["kickoff"].date()
+        dates_to_check.add(day.strftime("%Y-%m-%d"))
+        dates_to_check.add((day - timedelta(days=1)).strftime("%Y-%m-%d"))
+
+    all_results = []
+    updates = []  # (game_id, score_a, score_b, target_status, team_a, team_b, was_corrected)
+
+    for d in sorted(dates_to_check):
+        try:
+            espn_events = fetch_espn_games(d)
+        except Exception as e:
+            all_results.append({"date": d, "error": str(e)})
+            continue
+
+        for event in espn_events:
+            parsed = parse_espn_event(event)
+            if not parsed:
+                continue
+
+            is_live = parsed.get("state") == "in"
+            is_ft = parsed.get("is_full_time")
+            if not (is_live or is_ft):
+                continue  # agendado — ignora
+
+            home_pt = parsed["home"]["name_pt"]
+            away_pt = parsed["away"]["name_pt"]
+
+            match = None
+            for g in in_window:
+                if g.get("matched"):
+                    continue
+                if (g["team_a"] == home_pt and g["team_b"] == away_pt) or \
+                   (g["team_a"] == away_pt and g["team_b"] == home_pt):
+                    match = g
+                    g["matched"] = True
+                    break
+
+            if not match:
+                all_results.append({"status": "not_found", "home": home_pt, "away": away_pt})
+                continue
+
+            # Placar na ordem do bolão
+            if match["team_a"] == home_pt:
+                score_a = parsed["home"]["score"]
+                score_b = parsed["away"]["score"]
+            else:
+                score_a = parsed["away"]["score"]
+                score_b = parsed["home"]["score"]
+
+            target_status = "finished" if is_ft else "live"
+            cur_a, cur_b = match["score_a"], match["score_b"]
+
+            if cur_a == score_a and cur_b == score_b and match["status"] == target_status:
+                all_results.append({"status": "already_correct", "game_id": match["id"]})
+                continue
+
+            # já tinha placar (parcial/provisório) — relevante só no FT (corrected)
+            was_corrected = cur_a is not None
+            updates.append((match["id"], score_a, score_b, target_status,
+                            match["team_a"], match["team_b"], was_corrected))
+            match["score_a"] = score_a
+            match["score_b"] = score_b
+            match["status"] = target_status
+
+    # 3. Aplica as atualizações (double-check de concorrência)
+    if updates:
+        with session_scope() as session:
+            for game_id, score_a, score_b, target_status, team_a, team_b, was_corrected in updates:
+                game = session.get(Game, game_id)
+                if not game:
+                    continue
+                # 🔒 Re-confirma proteção temporal: nunca jogos futuros
+                if game.kickoff is None or game.kickoff > now:
+                    continue
+                # 🔒 Nunca rebaixar um jogo já finalizado de volta para 'live'
+                if (game.status or "scheduled") == "finished" and target_status == "live":
+                    continue
+                if game.score_a == score_a and game.score_b == score_b \
+                        and (game.status or "scheduled") == target_status:
+                    continue
+                game.score_a = score_a
+                game.score_b = score_b
+                game.status = target_status
+                if target_status == "finished":
+                    internal = "corrected" if was_corrected else "updated"
+                else:
+                    internal = "live_updated"
+                all_results.append({
+                    "status": internal,
+                    "game_id": game_id,
+                    "home": team_a,
+                    "away": team_b,
+                    "score_a": score_a,
+                    "score_b": score_b,
+                })
+
+    return all_results
+
+
+def start_live_scheduler():
+    """Poller de alta frequência (default 30s) para o ranking ao vivo.
+    Idempotente por processo. Só bate na ESPN quando há jogo em andamento."""
+    global _live_started
+    if _live_started:
+        return
+    _live_started = True
+
+    def _loop():
+        _time_module.sleep(20)  # espera o app/banco ficarem prontos
+        while True:
+            try:
+                now = datetime.now()
+                # Checagem barata: há jogo em janela?
+                with session_scope() as session:
+                    has_in_window = session.query(Game).filter(
+                        Game.kickoff.isnot(None),
+                        Game.kickoff <= now,
+                    ).filter(
+                        (Game.status != "finished") | (Game.status.is_(None))
+                    ).first() is not None
+
+                if has_in_window:
+                    results = _do_live_sync(now=now)
+                    live_up = sum(1 for r in results if r.get("status") == "live_updated")
+                    finished = sum(1 for r in results if r.get("status") in ("updated", "corrected"))
+                    if live_up or finished:
+                        _sync_log.info(
+                            "🔴 [live] placar ao vivo sincronizado: %d parcial(is), %d final(is)",
+                            live_up, finished,
+                        )
+                    # Push de resultado SÓ no FT (updated/corrected).
+                    # 'live_updated' fica de fora — nunca dispara "🏁 resultado".
+                    try:
+                        from .notifications import dispatch_result_notifications
+                        ft_results = [r for r in results if r.get("status") in ("updated", "corrected")]
+                        n = dispatch_result_notifications(ft_results)
+                        if n.get("sent"):
+                            _sync_log.info("🏁 [live] push de resultado enviado: %s", n)
+                    except Exception as ne:
+                        _sync_log.error("🏁 [live] erro no push de resultado: %s", ne)
+            except Exception as e:
+                _sync_log.error("🔴 [live] erro no poller ao vivo: %s", e)
+            _time_module.sleep(LIVE_INTERVAL_SECONDS)
+
+    t = threading.Thread(target=_loop, daemon=True, name="bolao-live-scheduler")
+    t.start()
+    _sync_log.info("🔴 Poller ao vivo iniciado (intervalo=%ds)", LIVE_INTERVAL_SECONDS)
+
+
+start_live_scheduler()
 
 
 # ---------------------------------------------------------------------------
@@ -859,6 +1088,12 @@ def game_detail(game_id: int):
         game.team_b = data.get("team_b", game.team_b)
         game.score_a = data.get("score_a", game.score_a)
         game.score_b = data.get("score_b", game.score_b)
+        # Sincroniza status quando o admin define/remove placar manualmente
+        if "score_a" in data and "score_b" in data:
+            if game.score_a is not None and game.score_b is not None:
+                game.status = "finished"
+            else:
+                game.status = "scheduled"
         return serialize_game(game)
 
 
@@ -926,6 +1161,7 @@ def game_result():
             game.score_a = score_b
             game.score_b = score_a
 
+        game.status = "finished"
         return serialize_game(game)
 
 
@@ -1504,6 +1740,7 @@ def serialize_game(game: Game):
         "team_b": game.team_b,
         "score_a": game.score_a,
         "score_b": game.score_b,
+        "status": game.status or "scheduled",
     }
 
 

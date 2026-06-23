@@ -24,6 +24,9 @@ services:
       # Usado apenas como valor inicial na criação do banco; depois disso é
       # controlado pela tela de Configurações do admin (banco de dados).
       - BOLAO_DAILY_REMINDER_HOUR=${BOLAO_DAILY_REMINDER_HOUR:-11}
+      # Ranking ao vivo: intervalo (s) do poller que atualiza o placar parcial
+      # durante os jogos. Default 30s. Só bate na ESPN quando há jogo em andamento.
+      - BOLAO_LIVE_INTERVAL=${BOLAO_LIVE_INTERVAL:-30}
     volumes:
       - ./backend:/app/backend
       - ./jogos_copa_2026.json:/app/jogos_copa_2026.json:ro

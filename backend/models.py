@@ -35,6 +35,8 @@ class Game(Base):
     team_b = Column(String, nullable=False)
     score_a = Column(Integer, nullable=True)
     score_b = Column(Integer, nullable=True)
+    # scheduled | live (placar parcial ao vivo) | finished (FT travado)
+    status = Column(String, nullable=False, default="scheduled")
 
     predictions = relationship("Prediction", back_populates="game", cascade="all, delete-orphan")
 
