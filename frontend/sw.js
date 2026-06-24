@@ -7,7 +7,7 @@
 //
 // Bump de versão: troque CACHE abaixo quando atualizar o shell.
 
-const CACHE = 'bolao-shell-v3';
+const CACHE = 'bolao-shell-v5';
 
 const CORE_ASSETS = [
     '/',

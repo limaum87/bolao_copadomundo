@@ -35,16 +35,16 @@ $manifest = [
     'dir' => 'ltr',
     'categories' => ['sports', 'games', 'entertainment'],
     'icons' => [
-        ['src' => '/assets/img/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
-        ['src' => '/assets/img/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
-        ['src' => '/assets/img/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ['src' => '/assets/img/icon-192.png?v=2', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+        ['src' => '/assets/img/icon-512.png?v=2', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+        ['src' => '/assets/img/icon-512.png?v=2', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
     ],
     'shortcuts' => [
         [
             'name' => 'Meus palpites',
             'short_name' => 'Palpites',
             'url' => $startUrl,
-            'icons' => [['src' => '/assets/img/icon-192.png', 'sizes' => '192x192']],
+            'icons' => [['src' => '/assets/img/icon-192.png?v=2', 'sizes' => '192x192']],
         ],
     ],
 ];
