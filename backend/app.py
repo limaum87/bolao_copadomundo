@@ -1755,9 +1755,14 @@ def serialize_prediction(prediction: Prediction):
 
 
 def serialize_finals(prediction: FinalsPrediction):
+    # Nome do participante vem do relacionamento (None se não estiver carregado).
+    participant_name = None
+    if prediction.participant is not None:
+        participant_name = prediction.participant.name
     return {
         "id": prediction.id,
         "participant_id": prediction.participant_id,
+        "participant_name": participant_name,
         "champion": prediction.champion,
         "runner_up": prediction.runner_up,
         "third_place": prediction.third_place,

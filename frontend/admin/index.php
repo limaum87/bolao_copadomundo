@@ -52,6 +52,7 @@ require_once __DIR__ . '/../config.php';
             <nav class="admin-nav">
                 <a href="/admin/index.php" class="active">🏠 Dashboard</a>
                 <a href="/admin/participantes.php">👥 Participantes</a>
+                <a href="/admin/palpites-finais.php">🏆 Palpites Finais</a>
                 <a href="/admin/jogos.php">⚽ Jogos</a>
                 <a href="/admin/configuracoes.php">⚙️ Configurações</a>
             </nav>
@@ -75,6 +76,12 @@ require_once __DIR__ . '/../config.php';
                         style="font-size: 2rem; font-weight: 700; color: var(--color-yellow-dark);">-</div>
                     <div class="text-muted">Palpites registrados</div>
                 </div>
+                <a href="/admin/palpites-finais.php" class="card text-center" style="text-decoration: none; color: inherit; display: block;">
+                    <div style="font-size: 3rem;">🏆</div>
+                    <div id="finalsCount"
+                        style="font-size: 2rem; font-weight: 700; color: var(--color-green-dark);">-</div>
+                    <div class="text-muted">Palpites finais <span id="finalsMissing" class="badge badge-warning" style="display:none;"></span></div>
+                </a>
             </div>
 
             <!-- Quick Actions -->
@@ -86,6 +93,9 @@ require_once __DIR__ . '/../config.php';
                     </a>
                     <a href="/admin/jogos.php" class="btn btn-outline btn-lg btn-block">
                         ➕ Adicionar Jogo
+                    </a>
+                    <a href="/admin/palpites-finais.php" class="btn btn-secondary btn-lg btn-block">
+                        🏆 Ver Palpites Finais
                     </a>
                 </div>
             </div>
@@ -175,15 +185,17 @@ require_once __DIR__ . '/../config.php';
 
         async function loadStats() {
             try {
-                const [participantsRes, gamesRes, scoresRes] = await Promise.all([
-                    fetch(`${apiBase}/participants`),
+                const [participantsRes, gamesRes, scoresRes, finalsRes] = await Promise.all([
+                    fetch(`${apiBase}/participants`, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined),
                     fetch(`${apiBase}/games`),
-                    fetch(`${apiBase}/scores`)
+                    fetch(`${apiBase}/scores`),
+                    fetch(`${apiBase}/finals_predictions`, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined)
                 ]);
 
                 const participants = await participantsRes.json();
                 const games = await gamesRes.json();
                 const scores = await scoresRes.json();
+                const finals = finalsRes.ok ? await finalsRes.json() : [];
 
                 document.getElementById('participantsCount').textContent = participants.length;
                 document.getElementById('gamesCount').textContent = games.length;
@@ -191,6 +203,25 @@ require_once __DIR__ . '/../config.php';
                 // Count predictions from scores
                 const totalPredictions = scores.reduce((sum, p) => sum + (p.games_predicted || 0), 0);
                 document.getElementById('predictionsCount').textContent = totalPredictions;
+
+                // Palpites finais: quantos participantes preencheram todos os 4 lugares
+                const isComplete = (f) => f && f.champion && f.runner_up && f.third_place && f.fourth_place;
+                const completed = finals.filter(isComplete).length;
+                const total = participants.length;
+                const missing = Math.max(0, total - completed);
+                document.getElementById('finalsCount').textContent = `${completed} / ${total}`;
+                const missingEl = document.getElementById('finalsMissing');
+                if (missing > 0) {
+                    missingEl.textContent = `${missing} faltando`;
+                    missingEl.style.display = 'inline-block';
+                } else if (total > 0) {
+                    missingEl.textContent = '✅ todos preencheram';
+                    missingEl.classList.remove('badge-warning');
+                    missingEl.classList.add('badge-success');
+                    missingEl.style.display = 'inline-block';
+                } else {
+                    missingEl.style.display = 'none';
+                }
 
                 // Render ranking
                 const variationBadge = (v) => {
