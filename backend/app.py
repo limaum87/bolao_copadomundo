@@ -73,6 +73,11 @@ def ensure_db_exists():
             # Backfill: jogos que já têm placar -> finished; demais -> scheduled
             cursor.execute("UPDATE games SET status='finished' WHERE score_a IS NOT NULL")
             conn.commit()
+        # games.espn_id: chave estável para casar jogos de mata-mata cujos times
+        # mudam de placeholder -> time real (importados via sync ESPN).
+        if 'espn_id' not in game_cols:
+            cursor.execute('ALTER TABLE games ADD COLUMN espn_id VARCHAR')
+            conn.commit()
         conn.close()
     except Exception:
         pass
@@ -248,6 +253,72 @@ def _do_sync(now=None):
     return all_results
 
 
+def _do_resolve_names():
+    """Renomeia placeholders -> times reais nos jogos do mata-mata (automático).
+
+    Casa por espn_id (chave estável) com a ESPN. Só toca jogos:
+      - com espn_id definido
+      - SEM placar (score_a IS NULL)  -> nunca altera resultados
+    Renomeia apenas team_a/team_b quando a ESPN já definiu times reais
+    (ex.: "2º Grupo J" -> "Croácia").
+
+    Proteção de produção: nunca altera placar/status. Idempotente.
+    """
+    from .sync_results import fetch_espn_events_raw, parse_espn_event
+
+    with session_scope() as session:
+        # Jogos placeholder: têm espn_id e ainda sem placar.
+        placeholders = session.query(Game).filter(
+            Game.espn_id.isnot(None),
+            Game.score_a.is_(None),
+        ).all()
+
+        if not placeholders:
+            return []
+
+        # Agrupa por data (formato ESPN YYYYMMDD do kickoff) p/ buscar em lote.
+        by_date = {}
+        for g in placeholders:
+            if g.kickoff:
+                by_date.setdefault(g.kickoff.strftime("%Y%m%d"), []).append(g)
+
+        results = []
+        renamed = 0
+        for date_str, games_on_date in by_date.items():
+            try:
+                events = fetch_espn_events_raw(date_str)
+            except Exception as e:
+                _sync_log.error("⏰ [rename] erro ESPN %s: %s", date_str, e)
+                continue
+
+            # Indexa eventos por espn_id (casa independentemente de fuso).
+            espn_by_id = {}
+            for ev in events:
+                parsed = parse_espn_event(ev)
+                if parsed and parsed.get("espn_id"):
+                    espn_by_id[str(parsed["espn_id"])] = parsed
+
+            for g in games_on_date:
+                parsed = espn_by_id.get(str(g.espn_id))
+                if not parsed:
+                    continue
+                home_pt = parsed["home"]["name_pt"]
+                away_pt = parsed["away"]["name_pt"]
+                # Só renomeia se algum lado mudou.
+                if g.team_a == home_pt and g.team_b == away_pt:
+                    continue
+                old = f"{g.team_a} x {g.team_b}"
+                g.team_a = home_pt
+                g.team_b = away_pt
+                renamed += 1
+                results.append({"game_id": g.id, "from": old, "to": f"{home_pt} x {away_pt}"})
+                _sync_log.info("🔁 [rename] jogo %d: %s -> %s", g.id, old, f"{home_pt} x {away_pt}")
+
+        if renamed:
+            _sync_log.info("⏰ [rename] %d jogo(s) renomeado(s) (placeholder -> time real)", renamed)
+        return results
+
+
 def start_sync_scheduler():
     """Inicia o scheduler de sync em background. Idempotente por processo."""
     global _sync_started
@@ -268,6 +339,17 @@ def start_sync_scheduler():
                     "⏰ [scheduler] sync concluído: %d novo(s), %d corrigido(s), %d não encontrado(s)",
                     updated, corrected, not_found,
                 )
+                # Renomeação automática de placeholders -> times reais (mata-mata).
+                # Independente e isolado: falhar aqui não afeta o sync de placar.
+                try:
+                    renamed_results = _do_resolve_names()
+                    if renamed_results:
+                        _sync_log.info(
+                            "⏰ [scheduler] renomeação: %d jogo(s) atualizado(s)",
+                            len(renamed_results),
+                        )
+                except Exception as re:
+                    _sync_log.error("⏰ [scheduler] erro na renomeação: %s", re)
                 try:
                     from .notifications import dispatch_result_notifications
                     n = dispatch_result_notifications(results)
@@ -284,7 +366,114 @@ def start_sync_scheduler():
     _sync_log.info("⏰ Scheduler de sync horário iniciado (intervalo=%ds)", SYNC_INTERVAL_SECONDS)
 
 
+def _bootstrap_future_games():
+    """Cria jogos futuros da ESPN (mata-mata) que ainda não existem no bolão.
+
+    Roda UMA vez no boot do app (em thread separada para não atrasar o startup).
+    Cobre o cenário de deploy: o data.db não entra no git, então ao subir em
+    produção faltam os jogos do mata-mata. Esta função os importa automaticamente,
+    inclusive placeholders (times indefinidos).
+
+    Proteções:
+      - Só cria jogos FUTUROS (kickoff >= agora): nunca toca dados de produção.
+      - Idempotente: casa por espn_id, não duplica.
+      - Erros ESPN (offline) são silenciosos: tenta de novo no próximo boot/sync.
+    """
+    from .sync_results import (
+        fetch_espn_events_raw, parse_espn_event, _espn_date_to_brt_iso, BRT_TZ,
+    )
+
+    def _run():
+        try:
+            _time_module.sleep(30)  # espera o app estabilizar
+            _sync_log.info("🚀 [bootstrap] checando jogos futuros da ESPN...")
+            now = datetime.now(BRT_TZ)
+
+            # Janela: de hoje até ~5 meses à frente (cobre a Copa toda).
+            inicio = now.strftime("%Y%m%d")
+            fim = (now + timedelta(days=150)).strftime("%Y%m%d")
+            events = fetch_espn_events_raw(f"{inicio}-{fim}")
+
+            # espn_ids e matchups já presentes no bolão.
+            with session_scope() as session:
+                existing_ids = {
+                    str(r[0]) for r in session.query(Game.espn_id).filter(Game.espn_id.isnot(None)).all()
+                }
+                # Nome dos times (em qualquer ordem) para evitar duplicar jogos
+                # antigos da fase de grupos que entraram sem espn_id.
+                existing_matchups = set()
+                for g in session.query(Game).all():
+                    existing_matchups.add((g.team_a, g.team_b))
+                    existing_matchups.add((g.team_b, g.team_a))
+
+            to_import = []
+            for event in events:
+                parsed = parse_espn_event(event)
+                if not parsed:
+                    continue
+                espn_id = parsed.get("espn_id") or None
+                home_pt = parsed["home"]["name_pt"]
+                away_pt = parsed["away"]["name_pt"]
+                # Idempotente: pula se já existe por espn_id OU por matchup de nomes.
+                if espn_id and str(espn_id) in existing_ids:
+                    continue
+                if (home_pt, away_pt) in existing_matchups:
+                    continue
+                kickoff = _espn_date_to_brt_iso(parsed.get("date"))
+                if not kickoff:
+                    continue
+                # 🔒 Só jogos futuros: protege dados de produção.
+                try:
+                    ko_dt = datetime.fromisoformat(kickoff).replace(tzinfo=BRT_TZ)
+                except Exception:
+                    continue
+                if ko_dt < now:
+                    continue
+                to_import.append({
+                    "kickoff": kickoff,
+                    "team_a": parsed["home"]["name_pt"],
+                    "team_b": parsed["away"]["name_pt"],
+                    "espn_id": espn_id,
+                })
+
+            if not to_import:
+                _sync_log.info("🚀 [bootstrap] nenhum jogo novo para importar.")
+                return
+
+            # Importa via endpoint interno (usa o app). Dedupe por espn_id.
+            with app.test_client() as client:
+                # token admin efêmero para o import.
+                from .models import AdminUser
+                admin_id = None
+                with session_scope() as session:
+                    admin = session.query(AdminUser).first()
+                    if admin:
+                        admin_id = admin.id  # captura id antes de fechar a sessão
+                headers = {}
+                if admin_id:
+                    token = jwt.encode(
+                        {"user_id": admin_id, "exp": datetime.utcnow() + timedelta(minutes=5)},
+                        app.config["SECRET_KEY"], algorithm="HS256",
+                    )
+                    headers["Authorization"] = f"Bearer {token}"
+                resp = client.post("/games/import", json=to_import, headers=headers)
+                if resp.status_code == 200:
+                    _sync_log.info("🚀 [bootstrap] importação: %s", resp.get_json())
+                else:
+                    _sync_log.error("🚀 [bootstrap] falha no import: %s %s", resp.status_code, resp.data)
+        except Exception as e:
+            _sync_log.error("🚀 [bootstrap] erro ao importar jogos: %s", e)
+
+    t = threading.Thread(target=_run, daemon=True, name="bolao-bootstrap-games")
+    t.start()
+
+
 start_sync_scheduler()
+
+
+# Cria jogos futuros da ESPN (mata-mata) no boot — garante que PROD tenha
+# os jogos mesmo sem o data.db (que não entra no git). Idempotente.
+_bootstrap_future_games()
 
 
 # ---------------------------------------------------------------------------
@@ -1003,6 +1192,7 @@ def games():
             team_b=data.get("team_b"),
             score_a=data.get("score_a"),
             score_b=data.get("score_b"),
+            espn_id=data.get("espn_id"),
         )
         session.add(game)
         session.flush()
@@ -1040,12 +1230,19 @@ def import_games():
             if not kickoff or not team_a or not team_b:
                 continue
 
+            existing = None
+            espn_id = item.get("espn_id")
             kickoff_dt = parse_date(kickoff)
-            existing = session.query(Game).filter(
-                Game.team_a == team_a,
-                Game.team_b == team_b,
-                Game.kickoff == kickoff_dt,
-            ).first()
+            # Dedupe por espn_id (chave estável) quando presente; senão pelo
+            # trio team_a + team_b + kickoff (comportamento legado).
+            if espn_id:
+                existing = session.query(Game).filter(Game.espn_id == espn_id).first()
+            if not existing:
+                existing = session.query(Game).filter(
+                    Game.team_a == team_a,
+                    Game.team_b == team_b,
+                    Game.kickoff == kickoff_dt,
+                ).first()
 
             if existing:
                 skipped += 1
@@ -1057,6 +1254,7 @@ def import_games():
                 team_b=team_b,
                 score_a=item.get("score_a"),
                 score_b=item.get("score_b"),
+                espn_id=espn_id,
             )
             session.add(game)
             imported += 1
@@ -1088,6 +1286,8 @@ def game_detail(game_id: int):
         game.team_b = data.get("team_b", game.team_b)
         game.score_a = data.get("score_a", game.score_a)
         game.score_b = data.get("score_b", game.score_b)
+        if "espn_id" in data:
+            game.espn_id = data.get("espn_id")
         # Sincroniza status quando o admin define/remove placar manualmente
         if "score_a" in data and "score_b" in data:
             if game.score_a is not None and game.score_b is not None:
@@ -1741,6 +1941,7 @@ def serialize_game(game: Game):
         "score_a": game.score_a,
         "score_b": game.score_b,
         "status": game.status or "scheduled",
+        "espn_id": game.espn_id,
     }
 
 

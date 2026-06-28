@@ -37,6 +37,9 @@ class Game(Base):
     score_b = Column(Integer, nullable=True)
     # scheduled | live (placar parcial ao vivo) | finished (FT travado)
     status = Column(String, nullable=False, default="scheduled")
+    # ID do evento na ESPN (chave estável para casar jogos de mata-mata cujos
+    # times mudam de placeholder -> time real ao longo do torneio).
+    espn_id = Column(String, nullable=True, index=True)
 
     predictions = relationship("Prediction", back_populates="game", cascade="all, delete-orphan")
 

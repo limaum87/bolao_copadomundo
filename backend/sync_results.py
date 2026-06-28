@@ -95,6 +95,47 @@ TEAM_MAP = {
     # para o caso de a API usar nomes alternativos
 }
 
+
+# ---------------------------------------------------------------------------
+# Tradução de placeholders de mata-mata (times ainda indefinidos)
+# ---------------------------------------------------------------------------
+# Aplicadas sobre o displayName da ESPN quando o nome NÃO está no TEAM_MAP.
+# Exemplos que aparecem na Copa 2026:
+#   "Group J 2nd Place"      -> "2º Grupo J"
+#   "Group A Winner"         -> "1º Grupo A"
+#   "Third Place Group E/.." -> "3º Grupos E/.."
+#   "Round of 32 1 Winner"   -> "Vencedor Fase-32 #1"
+#   "Round of 16 5 Winner"   -> "Vencedor Oitavas #5"
+#   "Quarterfinal 2 Winner"  -> "Vencedor Quartas #2"
+#   "Semifinal 1 Winner"     -> "Vencedor Semifinal #1"
+#   "Semifinal 1 Loser"      -> "Perdedor Semifinal #1"
+import re as _re
+_PLACEHOLDER_RULES = [
+    (_re.compile(r"^Group\s+([A-Z])\s+Winner$", _re.I),          lambda m: f"1º Grupo {m.group(1)}"),
+    (_re.compile(r"^Group\s+([A-Z])\s+2nd\s+Place$", _re.I),     lambda m: f"2º Grupo {m.group(1)}"),
+    (_re.compile(r"^Group\s+([A-Z])\s+(\d)(?:st|nd|rd|th)\s+Place$", _re.I), lambda m: f"{m.group(2)}º Grupo {m.group(1)}"),
+    (_re.compile(r"^Third\s+Place\s+Group\s+(.+)$", _re.I),      lambda m: f"3º Grupos {m.group(1)}"),
+    (_re.compile(r"^Round\s+of\s+32\s+(\d+)\s+Winner$", _re.I),  lambda m: f"Vencedor Fase-32 #{m.group(1)}"),
+    (_re.compile(r"^Round\s+of\s+16\s+(\d+)\s+Winner$", _re.I),  lambda m: f"Vencedor Oitavas #{m.group(1)}"),
+    (_re.compile(r"^Quarterfinal\s+(\d+)\s+Winner$", _re.I),     lambda m: f"Vencedor Quartas #{m.group(1)}"),
+    (_re.compile(r"^Semifinal\s+(\d+)\s+Winner$", _re.I),        lambda m: f"Vencedor Semifinal #{m.group(1)}"),
+    (_re.compile(r"^Semifinal\s+(\d+)\s+Loser$", _re.I),         lambda m: f"Perdedor Semifinal #{m.group(1)}"),
+]
+
+
+def translate_team(name_en: str) -> str:
+    """Traduz um nome de time/placeholder da ESPN para português.
+    Primeiro tenta o TEAM_MAP (times reais); depois regras de placeholder."""
+    if not name_en:
+        return name_en
+    if name_en in TEAM_MAP:
+        return TEAM_MAP[name_en]
+    for pattern, repl in _PLACEHOLDER_RULES:
+        m = pattern.match(name_en.strip())
+        if m:
+            return repl(m)
+    return name_en
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -162,7 +203,7 @@ def parse_espn_event(event: dict) -> dict | None:
     for c in competitors:
         info = {
             "name_en": c["team"]["displayName"],
-            "name_pt": TEAM_MAP.get(c["team"]["displayName"], c["team"]["displayName"]),
+            "name_pt": translate_team(c["team"]["displayName"]),
             "abbreviation": c["team"].get("abbreviation", ""),
             "score": int(c.get("score", 0)),
         }
@@ -184,6 +225,7 @@ def parse_espn_event(event: dict) -> dict | None:
         "detail": detail,
         "date": event.get("date", ""),
         "name": event.get("name", ""),
+        "espn_id": str(event.get("id", "")),
     }
 
 # ---------------------------------------------------------------------------
@@ -193,6 +235,16 @@ def parse_espn_event(event: dict) -> dict | None:
 def fetch_bolao_games() -> list[dict]:
     """Busca todos os jogos do bolão."""
     return _http_get(f"{BOLAO_API}/games")
+
+
+def find_bolao_match_by_espn(bolao_games: list[dict], espn_id: str | None):
+    """Encontra um jogo no bolão pelo espn_id (chave estável do mata-mata)."""
+    if not espn_id:
+        return None
+    for g in bolao_games:
+        if str(g.get("espn_id") or "") == str(espn_id):
+            return g
+    return None
 
 
 def update_bolao_score(game_id: int, score_a: int, score_b: int) -> dict:
@@ -230,6 +282,169 @@ def find_bolao_match(bolao_games: list[dict], home_pt: str, away_pt: str, date_i
                 return c
 
     return candidates[0]
+
+
+# ---------------------------------------------------------------------------
+# Criação de jogos (mata-mata, inclusive placeholders) e renomeação
+# ---------------------------------------------------------------------------
+
+# Fuso do bolão: America/Sao_Paulo (UTC-3). A ESPN devolve horários em UTC (Z).
+BRT_TZ = timezone(timedelta(hours=-3))
+
+
+def fetch_espn_events_raw(dates_param: str) -> list[dict]:
+    """Busca eventos da ESPN aceitando data única (20260628) ou
+    range (20260628-20260720)."""
+    url = f"{ESPN_SCOREBOARD}?dates={dates_param}"
+    log.info(f"Buscando ESPN: {url}")
+    data = _http_get(url)
+    return data.get("events", [])
+
+
+def _espn_date_to_brt_iso(date_str: str) -> str | None:
+    """Converte '2026-07-02T19:00Z' (UTC) para ISO em horário de Brasília,
+    sem timezone (formato esperado pelo banco)."""
+    if not date_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        return dt.astimezone(BRT_TZ).strftime("%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        return None
+
+
+def _auth_headers() -> dict:
+    return {"Authorization": f"Bearer {ADMIN_TOKEN}"} if ADMIN_TOKEN else {}
+
+
+def import_bolao_games(games: list[dict]) -> dict:
+    """POST /games/import com auth. Cada item: kickoff, team_a, team_b, espn_id?"""
+    body = json.dumps(games).encode()
+    req = urllib.request.Request(
+        f"{BOLAO_API}/games/import",
+        data=body,
+        headers={"Content-Type": "application/json", "User-Agent": "BolaoSync/1.0", **_auth_headers()},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def update_bolao_teams(game_id: int, team_a: str, team_b: str) -> dict:
+    """PUT /games/<id> renomeando os times (placeholder -> time real)."""
+    body = json.dumps({"team_a": team_a, "team_b": team_b}).encode()
+    req = urllib.request.Request(
+        f"{BOLAO_API}/games/{game_id}",
+        data=body,
+        headers={"Content-Type": "application/json", "User-Agent": "BolaoSync/1.0", **_auth_headers()},
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
+def create_games_from_espn(dates_param: str, dry_run: bool = False, allow_past: bool = False) -> list[dict]:
+    """Importa TODOS os eventos da ESPN no período como jogos no bolão,
+    inclusive aqueles cujos times ainda são placeholders.
+    Usa espn_id como chave de dedupe (o próprio endpoint já dedupe por espn_id).
+
+    Proteção: por padrão NÃO cria jogos passados (kickoff < agora) para evitar
+    duplicar/partilhar jogos de produção já com placar. Use allow_past=True
+    (CLI --allow-past) só em casos excepcionais."""
+    events = fetch_espn_events_raw(dates_param)
+    results = []
+    to_import = []
+    now = datetime.now(BRT_TZ)
+    skipped_past = 0
+
+    for event in events:
+        parsed = parse_espn_event(event)
+        if not parsed:
+            continue
+        home_pt = parsed["home"]["name_pt"]
+        away_pt = parsed["away"]["name_pt"]
+        kickoff = _espn_date_to_brt_iso(parsed.get("date"))
+        espn_id = parsed.get("espn_id") or None
+        if not kickoff:
+            continue
+        # 🔒 Proteção de produção: ignora jogos passados a menos que allow_past.
+        try:
+            ko_dt = datetime.fromisoformat(kickoff).replace(tzinfo=BRT_TZ)
+        except Exception:
+            ko_dt = None
+        if ko_dt and ko_dt < now and not allow_past:
+            skipped_past += 1
+            continue
+        is_placeholder = home_pt == parsed["home"]["name_en"] or away_pt == parsed["away"]["name_en"]
+        tag = " (placeholder)" if is_placeholder else ""
+        log.info(f"➕ {home_pt} x {away_pt}{tag} — {kickoff} (espn_id={espn_id})")
+        to_import.append({
+            "kickoff": kickoff,
+            "team_a": home_pt,
+            "team_b": away_pt,
+            "espn_id": espn_id,
+        })
+        results.append({"home": home_pt, "away": away_pt, "kickoff": kickoff, "espn_id": espn_id, "action": "queued"})
+
+    if dry_run:
+        log.info(f"🔧 [DRY-RUN] Importaria {len(to_import)} jogo(s)." +
+                 (f" ({skipped_past} passado(s) ignorado(s))." if skipped_past else ""))
+        return results
+
+    if not to_import:
+        log.info("Nenhum evento para importar." +
+                 (f" ({skipped_past} passado(s) ignorado(s))." if skipped_past else ""))
+        return results
+
+    summary = import_bolao_games(to_import)
+    log.info(f"💾 Importação: {summary}")
+    for r in results:
+        r["action"] = "imported"
+        r["summary"] = summary
+    return results
+
+
+def resolve_team_names(bolao_games: list[dict], dates_param: str, dry_run: bool = False) -> list[dict]:
+    """Renomeia placeholders no bolão quando a ESPN já definiu os times reais.
+    Casa por espn_id (chave estável) e atualiza team_a/team_b via PUT."""
+    events = fetch_espn_events_raw(dates_param)
+    results = []
+    for event in events:
+        parsed = parse_espn_event(event)
+        if not parsed:
+            continue
+        espn_id = parsed.get("espn_id")
+        match = find_bolao_match_by_espn(bolao_games, espn_id)
+        if not match:
+            continue
+        home_pt = parsed["home"]["name_pt"]
+        away_pt = parsed["away"]["name_pt"]
+        # Só renomeia se algum lado mudou (placeholder -> real).
+        if match["team_a"] == home_pt and match["team_b"] == away_pt:
+            continue
+        # Ignora placares já definidos (jogo real já travado).
+        if match.get("score_a") is not None:
+            continue
+        log.info(
+            f"🔁 Renomeando jogo {match['id']}: "
+            f"{match['team_a']} x {match['team_b']} -> {home_pt} x {away_pt}"
+        )
+        action = "would_rename" if dry_run else "renamed"
+        if not dry_run:
+            try:
+                update_bolao_teams(match["id"], home_pt, away_pt)
+                match["team_a"] = home_pt
+                match["team_b"] = away_pt
+            except Exception as e:
+                log.error(f"❌ Erro ao renomear jogo {match['id']}: {e}")
+                action = "error"
+        results.append({
+            "game_id": match["id"],
+            "from": f"{match['team_a']} x {match['team_b']}",
+            "to": f"{home_pt} x {away_pt}",
+            "action": action,
+        })
+    return results
 
 # ---------------------------------------------------------------------------
 # Sync logic
@@ -275,8 +490,11 @@ def sync_date(date_str: str, bolao_games: list[dict], dry_run: bool = False, for
             })
             continue
 
-        # Procura no bolão
-        match = find_bolao_match(bolao_games, home_pt, away_pt, parsed.get("date"), force=force)
+        # Procura no bolão: primeiro pela chave estável espn_id (mata-mata,
+        # onde os nomes mudam de placeholder -> time real); depois por nome.
+        match = find_bolao_match_by_espn(bolao_games, parsed.get("espn_id"))
+        if not match:
+            match = find_bolao_match(bolao_games, home_pt, away_pt, parsed.get("date"), force=force)
         if not match:
             log.warning(f"⚠️  Não encontrou no bolão: {home_pt} x {away_pt}")
             results.append({
@@ -363,6 +581,16 @@ def sync_all(bolao_games: list[dict], dry_run: bool = False, force: bool = False
         return []
 
     all_results = []
+    # Primeiro resolve nomes de placeholders (mata-mata) para essas datas.
+    # A ESPN já pode ter definido os times reais; renomeia antes do placar.
+    name_results = []
+    for d in sorted(dates):
+        name_results.extend(resolve_team_names(bolao_games, d, dry_run=dry_run))
+    renamed = sum(1 for r in name_results if r.get("action") == "renamed")
+    if renamed:
+        log.info(f"🔁 {renamed} jogo(s) renomeado(s) (placeholder -> time real)")
+    all_results.extend(name_results)
+
     for d in sorted(dates):
         log.info(f"📅 Processando {d}")
         results = sync_date(d, bolao_games, dry_run=dry_run, force=force)
@@ -429,6 +657,17 @@ def main():
     parser.add_argument("--api-url", help=f"URL do bolão API (default: {BOLAO_API})")
     parser.add_argument("--token", help="Token de admin (ou set BOLAO_ADMIN_TOKEN env)")
     parser.add_argument("--login", nargs=2, metavar=("USER", "PASS"), help="Faz login automaticamente")
+    parser.add_argument("--create-games", action="store_true",
+                        help="Importa jogos da ESPN (inclusive placeholders de mata-mata). "
+                             "Use com --date DD ou --create-range INICIO-FIM")
+    parser.add_argument("--create-range", metavar="INICIO-FIM",
+                        help="Range de datas ESPN (ex: 20260628-20260720) para --create-games/--update-names")
+    parser.add_argument("--update-names", action="store_true",
+                        help="Só renomeia placeholders -> times reais (casa por espn_id). "
+                             "Use com --date DD ou --create-range INICIO-FIM")
+    parser.add_argument("--allow-past", action="store_true",
+                        help="Permite criar/renomear jogos passados com --create-games/--update-names "
+                             "(por padrão jogos passados são protegidos). NUNCA sobrescreve placares.")
     args = parser.parse_args()
 
     if args.api_url:
@@ -454,6 +693,27 @@ def main():
         show_live()
         return
 
+    # Define o parâmetro de datas ESPN para os modos create/update
+    espn_dates = args.create_range or (args.date.replace("-", "") if args.date else None)
+
+    # Modo criar jogos (importa mata-mata, inclusive placeholders)
+    if args.create_games:
+        if not espn_dates:
+            log.error("❌ --create-games exige --date DD ou --create-range INICIO-FIM")
+            sys.exit(1)
+        # Importar exige token de admin
+        if not ADMIN_TOKEN:
+            log.error("❌ --create-games exige --token, --login USER PASS ou BOLAO_ADMIN_TOKEN")
+            sys.exit(1)
+        results = create_games_from_espn(espn_dates, dry_run=args.dry_run, allow_past=args.allow_past)
+        imported = results and results[0].get("summary", {}).get("imported", 0)
+        log.info(f"\n{'='*40}")
+        log.info(f"Criação de jogos: {len(results)} evento(s) processado(s).")
+        log.info(f"{'='*40}")
+        if results:
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+        return
+
     # Busca jogos do bolão
     log.info(f"Conectando ao bolão: {BOLAO_API}/games")
     try:
@@ -463,6 +723,20 @@ def main():
         sys.exit(1)
 
     log.info(f"{len(bolao_games)} jogos no bolão, {sum(1 for g in bolao_games if g.get('score_a') is None)} sem placar")
+
+    # Modo só renomear placeholders
+    if args.update_names:
+        if not espn_dates:
+            log.error("❌ --update-names exige --date DD ou --create-range INICIO-FIM")
+            sys.exit(1)
+        results = resolve_team_names(bolao_games, espn_dates, dry_run=args.dry_run)
+        renamed = sum(1 for r in results if r.get("action") == "renamed")
+        log.info(f"\n{'='*40}")
+        log.info(f"Nomes atualizados: {renamed}")
+        log.info(f"{'='*40}")
+        if results:
+            print(json.dumps(results, ensure_ascii=False, indent=2))
+        return
 
     # Determina quais datas sincronizar
     if args.date:
