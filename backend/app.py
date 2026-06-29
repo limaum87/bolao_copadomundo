@@ -5,7 +5,7 @@ import subprocess
 import logging
 import threading
 import time as _time_module
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from flask import Flask, jsonify, request, send_file
@@ -34,6 +34,19 @@ DB_PATH = _db_path_from_url(DATABASE_URL)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dev_secret_key_change_in_prod'
 CORS(app)
+
+
+def _now_brt() -> datetime:
+    """Horário de Brasília (BRT, UTC-3) como datetime 'naive' (sem tzinfo).
+
+    O banco guarda `Game.kickoff` em horário de Brasília sem tzinfo. Portanto
+    TODA comparação com kickoff (filtros de palpites, scheduler ao vivo, prazo
+    das finais) e toda derivação de 'data de hoje' (snapshots de ranking,
+    lembrete diário) deve usar este helper — nunca `datetime.now()`, que
+    reflete o fuso do container e pode dessincronizar os horários das
+    notificações quando o container não está em America/Sao_Paulo.
+    """
+    return datetime.now(timezone(timedelta(hours=-3))).replace(tzinfo=None)
 
 
 # Initialize database on app startup
@@ -126,7 +139,7 @@ def _do_sync(now=None):
     """
     from .sync_results import fetch_espn_games, parse_espn_event
 
-    now = now or datetime.now()
+    now = now or _now_brt()
 
     # 1. Snapshot read-only dos jogos (serializa para usar fora da sessão)
     with session_scope() as session:
@@ -509,7 +522,7 @@ def _do_live_sync(now=None):
     """
     from .sync_results import fetch_espn_games, parse_espn_event
 
-    now = now or datetime.now()
+    now = now or _now_brt()
 
     # 1. Snapshot read-only dos jogos em janela (kickoff <= now, não finished)
     with session_scope() as session:
@@ -649,7 +662,7 @@ def start_live_scheduler():
         _time_module.sleep(20)  # espera o app/banco ficarem prontos
         while True:
             try:
-                now = datetime.now()
+                now = _now_brt()
                 # Checagem barata: há jogo em janela?
                 with session_scope() as session:
                     has_in_window = session.query(Game).filter(
@@ -757,7 +770,7 @@ def start_daily_reminder_scheduler():
         _time_module.sleep(45)  # dá tempo do app/banco ficarem prontos
         while True:
             try:
-                now = datetime.now()
+                now = _now_brt()
                 if now.hour >= _get_daily_reminder_hour():
                     from .notifications import dispatch_daily_missing_reminders
                     result = dispatch_daily_missing_reminders()
@@ -867,7 +880,7 @@ def _ranking_as_of(session, target_date):
 def ensure_yesterday_snapshot(now=None):
     """Cria o snapshot de ontem (se ainda não existir) com o ranking atual.
     Idempotente. Usado pelo scheduler em background."""
-    now = now or datetime.now()
+    now = now or _now_brt()
     today = now.date() if isinstance(now, datetime) else now
     yesterday = today - timedelta(days=1)
     with session_scope() as session:
@@ -877,7 +890,7 @@ def ensure_yesterday_snapshot(now=None):
 
 def _seconds_until_next_snapshot(now=None):
     """Segundos até a próxima hora agendada do snapshot (default 5h)."""
-    now = now or datetime.now()
+    now = now or _now_brt()
     target = now.replace(hour=SNAPSHOT_HOUR, minute=0, second=0, microsecond=0)
     if now >= target:
         target += timedelta(days=1)
@@ -901,7 +914,7 @@ def start_ranking_snapshot_scheduler():
     def _loop():
         _time_module.sleep(60)  # dá tempo do app/banco ficarem prontos
         while True:
-            now = datetime.now()
+            now = _now_brt()
             try:
                 # Só cria após a hora agendada. Antes disso, apenas aguarda.
                 # Idempotente: se já existe (ex.: criado por outra chamada), no-op.
@@ -1010,9 +1023,9 @@ def server_date():
         "summary": (
             "OK: o relógio do container bate com BRT."
             if aligned else
-            f"ATENÇÃO: o container está dessincronizado do BRT em {int(drift)}s. "
-            "As notificações usam _now_brt_naive() e disparam no horário correto; "
-            "mas comparações em app.py que usam datetime.now() podem estar erradas."
+            f"ATENÇÃO: o container está dessincronizado do BRT em {int(drift)}s; "
+            "as comparações de kickoff agora usam _now_brt() e seguem corretas, "
+            "mas vale revisar o TZ do container.",
         ),
     }
 
@@ -1477,7 +1490,7 @@ def predictions():
                 # só permite ver palpites de jogos que já começaram.
                 if not is_admin and not participant_uid:
                     game = session.get(Game, game_id)
-                    if game and game.kickoff > datetime.now():
+                    if game and game.kickoff > _now_brt():
                         return jsonify([]) # Esconde palpites alheios antes do jogo
                 
                 query = query.filter(Prediction.game_id == game_id)
@@ -1503,7 +1516,7 @@ def predictions():
         if not game:
             return {"error": "Game not found"}, 404
 
-        if game.kickoff <= datetime.now():
+        if game.kickoff <= _now_brt():
             return {"error": "Predictions are closed for this game"}, 400
 
         existing = (
@@ -1550,7 +1563,7 @@ def _knockout_started(session) -> bool:
     if len(games) <= knockout_count:
         return False
     first_knockout = games[len(games) - knockout_count]
-    return first_knockout.kickoff <= datetime.now()
+    return first_knockout.kickoff <= _now_brt()
 
 
 @app.route("/finals_predictions/board", methods=["GET"])
@@ -1624,7 +1637,7 @@ def finals_predictions():
         # Check finals deadline
         config = session.query(ScoringConfig).get(1)
         if config and getattr(config, 'finals_deadline', None):
-            if datetime.now() > config.finals_deadline:
+            if _now_brt() > config.finals_deadline:
                 return {"error": "O prazo para palpites finais já encerrou."}, 400
 
         record = (
@@ -1680,9 +1693,9 @@ def scores():
         # terminaram e foram sincronizados antes de congelar o ranking,
         # mantendo consistência com o backfill (jogos atribuídos pela data do
         # kickoff) e com o scheduler diário. Robustez caso o scheduler não rode.
-        today = datetime.now().date()
+        today = _now_brt().date()
         try:
-            if datetime.now().hour >= SNAPSHOT_HOUR:
+            if _now_brt().hour >= SNAPSHOT_HOUR:
                 yesterday = today - timedelta(days=1)
                 _capture_ranking_snapshot(session, yesterday, results)
                 session.flush()  # garante visibilidade na leitura de referência abaixo
@@ -1762,7 +1775,7 @@ def scores_daily():
         elif available:
             target_date = available[0]
         else:
-            target_date = datetime.now().date()
+            target_date = _now_brt().date()
 
         config = session.query(ScoringConfig).get(1)
         scoring_cfg = get_scoring_config_dict(config)
@@ -1802,7 +1815,7 @@ def ranking_daily():
         except ValueError:
             return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
     else:
-        target_date = datetime.now().date()
+        target_date = _now_brt().date()
 
     with session_scope() as session:
         today_ranking = _ranking_as_of(session, target_date)
@@ -1844,7 +1857,7 @@ def ranking_snapshot():
         except ValueError:
             return {"error": "Invalid date format. Use YYYY-MM-DD"}, 400
     else:
-        target_date = datetime.now().date() - timedelta(days=1)
+        target_date = _now_brt().date() - timedelta(days=1)
 
     with session_scope() as session:
         results = _compute_ranking_results(session)
@@ -1876,7 +1889,7 @@ def ranking_backfill():
     """
     with session_scope() as session:
         finished_games = session.query(Game).filter(Game.score_a.isnot(None)).all()
-        today = datetime.now().date()
+        today = _now_brt().date()
         # Datas distintas de jogos finalizados (dia do kickoff) anteriores a hoje.
         gamedays = sorted({
             g.kickoff.date() for g in finished_games
@@ -2233,8 +2246,9 @@ def live_matches():
     """Endpoint público: retorna jogos ao vivo e próximo jogo da ESPN."""
     from .sync_results import fetch_espn_games, parse_espn_event
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    now_brt = _now_brt()
+    today = now_brt.strftime("%Y-%m-%d")
+    tomorrow = (now_brt + timedelta(days=1)).strftime("%Y-%m-%d")
 
     live_games = []
     next_game = None
