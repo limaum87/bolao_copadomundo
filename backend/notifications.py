@@ -21,9 +21,21 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 _log = logging.getLogger("bolao.push")
+
+# Fuso do bolão: America/Sao_Paulo (UTC-3), sem DST desde 2019.
+# O banco guarda `kickoff` em hora de Brasília sem tzinfo (datetime 'naive').
+# Por isso TODA comparação com kickoff (filtros SQL e aritmética) deve usar um
+# datetime naive em BRT. Importante: NÃO usar datetime.now() puro, que reflete
+# o fuso do container (que pode estar em UTC) e desloca os horários.
+BRT_TZ = timezone(timedelta(hours=-3))
+
+
+def _now_brt_naive() -> datetime:
+    """Horário atual de Brasília como datetime naive (sem tzinfo)."""
+    return datetime.now(BRT_TZ).replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +260,7 @@ def _plan_pregame_reminders(session, now: datetime | None = None,
     from .models import (Game, NotificationLog, Participant, Prediction,
                          PushSubscription)
 
-    now = now or datetime.now()
+    now = now or _now_brt_naive()
     checkpoints = checkpoints or _reminder_checkpoints()
     tol = tol if tol is not None else _reminder_tolerance_min()
 
@@ -314,7 +326,7 @@ def dispatch_pregame_reminders() -> dict:
     if not is_push_enabled():
         return {"sent": 0, "reason": "push_disabled"}
 
-    now = datetime.now()
+    now = _now_brt_naive()
     checkpoints = _reminder_checkpoints()
     tol = _reminder_tolerance_min()
     horizon = now + timedelta(minutes=max(checkpoints) + tol)
@@ -369,7 +381,7 @@ def dispatch_daily_missing_reminders(force: bool = False) -> dict:
     if not is_push_enabled():
         return {"sent": 0, "reason": "push_disabled"}
 
-    now = datetime.now()
+    now = _now_brt_naive()
     today = now.date()
     log_key = f"daily-missing:{today.isoformat()}"
 
