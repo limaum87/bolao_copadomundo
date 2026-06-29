@@ -931,6 +931,92 @@ def health():
     return {"status": "ok"}
 
 
+@app.route("/date")
+@app.route("/api/date")
+def server_date():
+    """Diagnóstico de fuso/horário do servidor (público, sem auth).
+
+    Expõe várias leituras de relógio para auditar de onde vem o 'agora' usado
+    pelas comparações com `Game.kickoff` (sempre em horário de Brasília/BRT,
+    guardado sem tzinfo). A chave para entender problemas de notificação é
+    comparar `container_local` (o que datetime.now() devolve) com `brt_naive`
+    (o que as notificações de fato usam via _now_brt_naive) e o `drift_seconds`.
+    """
+    from datetime import timezone, timedelta as _td
+
+    brt = timezone(_td(hours=-3))
+    now_local = datetime.now()                       # relógio cru do container
+    now_brt_naive = datetime.now(brt).replace(tzinfo=None)  # usado pelas notificações
+    now_utc = datetime.utcnow()
+
+    local_aware = now_local.astimezone()             # tz reconhecida pelo sistema
+    offset = local_aware.utcoffset()
+    drift = (now_local - now_brt_naive).total_seconds()
+
+    if offset is not None:
+        total = offset.total_seconds()
+        sign = "+" if total >= 0 else "-"
+        total = abs(total)
+        offset_str = f"{sign}{int(total // 3600):02d}:{int((total % 3600) // 60):02d}"
+        offset_hours = round(total / 3600, 2) * (1 if sign == "+" else -1)
+    else:
+        offset_str = None
+        offset_hours = None
+
+    aligned = abs(drift) < 1
+
+    # Próximo jogo + janelas de lembrete, para visualizar quando disparariam.
+    next_game = None
+    checkpoints = []
+    try:
+        from .notifications import _reminder_checkpoints
+        cps = sorted(_reminder_checkpoints())
+        with session_scope() as session:
+            g = (
+                session.query(Game)
+                .filter(Game.kickoff.isnot(None), Game.kickoff > now_brt_naive)
+                .order_by(Game.kickoff)
+                .first()
+            )
+            if g:
+                next_game = {
+                    "id": g.id,
+                    "team_a": g.team_a,
+                    "team_b": g.team_b,
+                    "kickoff_brt": g.kickoff.isoformat(),
+                }
+                for c in cps:
+                    checkpoints.append({
+                        "checkpoint_min": c,
+                        "fire_at_brt": (g.kickoff - _td(minutes=c)).isoformat(),
+                    })
+    except Exception as e:
+        next_game = {"error": repr(e)}
+
+    return {
+        "container_local": now_local.isoformat(timespec="seconds"),
+        "container_tz": local_aware.tzname(),
+        "container_offset": offset_str,
+        "container_offset_hours": offset_hours,
+        "tz_env": os.environ.get("TZ"),
+        "brt_naive": now_brt_naive.isoformat(timespec="seconds"),
+        "utc": now_utc.isoformat(timespec="seconds"),
+        "container_equals_brt": aligned,
+        "drift_seconds": int(drift),
+        "notifications_use_brt_naive": True,
+        "verdict": "aligned" if aligned else "misaligned",
+        "next_game": next_game,
+        "pregame_checkpoints": checkpoints,
+        "summary": (
+            "OK: o relógio do container bate com BRT."
+            if aligned else
+            f"ATENÇÃO: o container está dessincronizado do BRT em {int(drift)}s. "
+            "As notificações usam _now_brt_naive() e disparam no horário correto; "
+            "mas comparações em app.py que usam datetime.now() podem estar erradas."
+        ),
+    }
+
+
 def verify_auth_token():
     token = None
     if 'Authorization' in request.headers:
