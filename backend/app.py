@@ -1441,6 +1441,77 @@ def predictions():
         return serialize_prediction(prediction), 201
 
 
+def _knockout_started(session) -> bool:
+    """True quando o mata-mata já começou (fase eliminatória em andamento).
+
+    Detecção baseada na estrutura do torneio, sem campo de "fase" no banco:
+      - A Copa 2026 (48 times, 12 grupos de 4) tem 72 jogos na fase de grupos
+        e exatamente 32 no mata-mata (fase de 32 = 16, oitavas = 8, quartas = 4,
+        semifinal = 2, final = 1, disputa de 3º = 1).
+      - O primeiro jogo eliminatório é o (total - 32)-ésimo por kickoff
+        (índice 0-based), pois TODA a fase de grupos acaba antes do mata-mata.
+      - O mata-mata "começou" quando o kickoff desse jogo já passou.
+
+    Robusto: funciona enquanto houver ao menos 33 jogos cadastrados.
+    """
+    games = (
+        session.query(Game)
+        .filter(Game.kickoff.isnot(None))
+        .order_by(Game.kickoff)
+        .all()
+    )
+    knockout_count = 32
+    if len(games) <= knockout_count:
+        return False
+    first_knockout = games[len(games) - knockout_count]
+    return first_knockout.kickoff <= datetime.now()
+
+
+@app.route("/finals_predictions/board", methods=["GET"])
+def finals_predictions_board():
+    """Board público dos palpites finais (campeão/vice/3º/4º) de TODOS.
+
+    Só expõe os palpites quando o mata-mata já começou — nesse ponto o prazo
+    de palpites já encerrou, então ninguém pode mais alterar o seu, e faz
+    sentido liberar a visualização para comparar com os outros.
+
+    Não expõe credenciais sensíveis: retorna apenas o nome do participante e
+    os 4 times (sem uid, email ou participant_id). Quando o mata-mata ainda
+    não começou, retorna {visible: false} para o front ocultar a área.
+    """
+    with session_scope() as session:
+        visible = _knockout_started(session)
+        if not visible:
+            return jsonify({
+                "visible": False,
+                "outcome": None,
+                "predictions": [],
+            })
+
+        rows = (
+            session.query(FinalsPrediction)
+            .join(Participant, Participant.id == FinalsPrediction.participant_id)
+            .order_by(Participant.name)
+            .all()
+        )
+        outcome = session.query(TournamentOutcome).get(1)
+
+        return jsonify({
+            "visible": True,
+            "outcome": serialize_outcome(outcome) if outcome else None,
+            "predictions": [
+                {
+                    "name": r.participant.name if r.participant else "Desconhecido",
+                    "champion": r.champion,
+                    "runner_up": r.runner_up,
+                    "third_place": r.third_place,
+                    "fourth_place": r.fourth_place,
+                }
+                for r in rows
+            ],
+        })
+
+
 @app.route("/finals_predictions", methods=["POST", "GET"])
 def finals_predictions():
     with session_scope() as session:

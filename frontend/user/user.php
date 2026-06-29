@@ -128,6 +128,15 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                         <p class="text-muted mb-md">Veja sua posição na tabela</p>
                         <div class="badge badge-info">Ver Classificação</div>
                     </div>
+                    <!-- Palpites dos finalistas de todos (só visível após o mata-mata começar) -->
+                    <div id="finalsBoardCard" class="card text-center" style="cursor: pointer; transition: transform 0.2s; display: none;"
+                        onclick="showView('finals_board')" onmouseover="this.style.transform='translateY(-5px)'"
+                        onmouseout="this.style.transform='translateY(0)'">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">👀</div>
+                        <h3>Palpites de Todos</h3>
+                        <p class="text-muted mb-md">Quem cada um apostou nos 4 finalistas</p>
+                        <div class="badge badge-success">Ver Palpites</div>
+                    </div>
                 </div>
             </section>
 
@@ -226,6 +235,35 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                         <div class="loading-container">
                             <div class="spinner"></div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Finals Board View (palpites de todos os finalistas) -->
+            <div id="finalsBoardView" style="display: none;">
+                <button class="btn btn-outline mb-lg" onclick="showView('dashboard')">← Voltar ao Menu</button>
+                <div class="card">
+                    <h3 class="card-title mb-md">👀 Palpites dos Finalistas</h3>
+                    <p class="text-muted mb-lg" style="font-size: 0.9rem;">
+                        Confira quem cada participante apostou nos 4 primeiros lugares.
+                        <span id="finalsBoardOutcomeHint">Em verde, quem acertou o resultado oficial (quando definido).</span>
+                    </p>
+                    <div id="finalsBoardOutcome" class="mb-lg" style="display:none;"></div>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Participante</th>
+                                    <th>🥇 Campeão</th>
+                                    <th>🥈 Vice</th>
+                                    <th>🥉 3º lugar</th>
+                                    <th>4º lugar</th>
+                                </tr>
+                            </thead>
+                            <tbody id="finalsBoardBody">
+                                <tr><td colspan="5" class="text-center">Carregando...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -655,6 +693,7 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
             document.getElementById('gamesView').style.display = 'none';
             document.getElementById('finalsView').style.display = 'none';
             document.getElementById('rankingView').style.display = 'none';
+            document.getElementById('finalsBoardView').style.display = 'none';
 
             // Show selected view
             if (viewName === 'dashboard') {
@@ -676,6 +715,9 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
                 document.getElementById('rankingDateWrap').style.display = 'none';
                 document.getElementById('rankingTitle').textContent = '🏆 Ranking Geral';
                 loadRanking();
+            } else if (viewName === 'finals_board') {
+                document.getElementById('finalsBoardView').style.display = 'block';
+                loadFinalsBoard();
             }
         }
 
@@ -991,9 +1033,97 @@ if (preg_match('/^[A-Za-z0-9]{6,128}$/', $uid)) {
             }
         }
 
+        // ---- Finals Board (palpites de todos os finalistas) ----
+        let finalsBoardOutcome = null;
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Mostra o card "Palpites de Todos" só quando o mata-mata já começou.
+        // Consulta leve ao endpoint público; em caso de falha, mantém o card oculto.
+        async function checkFinalsBoardVisibility() {
+            try {
+                const res = await fetch(`${apiBase}/finals_predictions/board`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.visible) {
+                    document.getElementById('finalsBoardCard').style.display = '';
+                }
+            } catch (e) {
+                /* silencioso: card permanece oculto */
+            }
+        }
+
+        async function loadFinalsBoard() {
+            const tbody = document.getElementById('finalsBoardBody');
+            const outcomeDiv = document.getElementById('finalsBoardOutcome');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner" style="margin: 8px auto;"></div></td></tr>';
+            outcomeDiv.style.display = 'none';
+
+            try {
+                const res = await fetch(`${apiBase}/finals_predictions/board`);
+                const data = await res.json();
+
+                if (!data.visible) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Ainda não disponível. Libera assim que o mata-mata começar. ⏳</td></tr>';
+                    return;
+                }
+
+                finalsBoardOutcome = data.outcome || null;
+                const POS_KEYS = ['champion', 'runner_up', 'third_place', 'fourth_place'];
+                const POS_LABELS = { champion: '🥇', runner_up: '🥈', third_place: '🥉', fourth_place: '4º' };
+                const hasOutcome = finalsBoardOutcome && POS_KEYS.some(k => finalsBoardOutcome[k]);
+
+                // Banner do resultado oficial (quando definido)
+                if (hasOutcome) {
+                    outcomeDiv.className = 'alert mb-lg';
+                    outcomeDiv.style.cssText = 'display:flex; flex-wrap:wrap; gap:0.4rem 1.25rem; align-items:center; background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.4); color:#1d4ed8;';
+                    outcomeDiv.innerHTML =
+                        '<strong style="width:100%; margin-bottom:4px;">🏆 Resultado Oficial</strong>' +
+                        POS_KEYS.map(k => {
+                            const team = finalsBoardOutcome[k];
+                            const cell = team ? getTeamHtml(team) : '<span class="text-muted">—</span>';
+                            return `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-weight:700;">${POS_LABELS[k]}</span>${cell}</span>`;
+                        }).join('');
+                }
+
+                const preds = data.predictions || [];
+                if (preds.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Nenhum palpite final registrado ainda.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = preds.map(p => {
+                    const isMe = participantName && p.name === participantName;
+                    const cells = POS_KEYS.map(k => {
+                        const team = p[k];
+                        if (!team) return '<td><span class="text-muted italic">—</span></td>';
+                        const hit = hasOutcome && finalsBoardOutcome[k] === team;
+                        const badge = hit ? ' <span class="badge badge-success" style="font-size:0.6rem; margin-left:2px;">✓</span>' : '';
+                        return `<td>${getTeamHtml(team)}${badge}</td>`;
+                    }).join('');
+                    return `<tr class="${isMe ? 'highlight-row' : ''}" style="${isMe ? 'background-color: rgba(254, 221, 0, 0.1);' : ''}">
+                        <td><strong>${escapeHtml(p.name)}</strong>${isMe ? '<span class="badge badge-info" style="margin-left:8px;">Você</span>' : ''}</td>
+                        ${cells}
+                    </tr>`;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading finals board:', error);
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-error">Erro ao carregar palpites</td></tr>';
+            }
+        }
+
         // Initialize
         loadParticipantName();
         loadData();
+        checkFinalsBoardVisibility();
     </script>
 
     <!-- Notificações push (Web Push / VAPID) -->
