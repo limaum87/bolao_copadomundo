@@ -1220,6 +1220,216 @@ def admin_diagnostics_notifications():
     })
 
 
+@app.route("/admin/diagnostics/notifications/upcoming")
+def admin_diagnostics_notifications_upcoming():
+    """Previsão (forward-looking) das PRÓXIMAS notificações automáticas e seus
+    horários previstos. Complemento do /admin/diagnostics/notifications (que
+    olha para trás, mostrando o que já disparou). Útil para conferir ANTES do
+    tempo se o agendamento está correto.
+
+    Cobre os dois schedulers de push:
+      1. Lembretes pré-jogo: para cada jogo futuro, em cada checkpoint
+         (default 180/120/60 min antes do kickoff, com tolerância), mostra a
+         janela de disparo [kickoff-C, kickoff-(C-tol)], o status
+         (scheduled/active/fired/missed) e os inscritos que seriam avisados
+         (os que ainda não palpitararam aquele jogo).
+      2. Lembrete diário de palpites faltantes (1x/dia às HH:00 BRT): hoje e
+         próximos dias até o último jogo, com horário previsto, status e nº de
+         jogos do dia.
+
+    Query params:
+      hours — horizonte (h) p/ lembretes pré-jogo (default 72)
+      days  — nº de dias futuros no lembrete diário (default 7)
+
+    Público (sem auth), como os demais endpoints de diagnóstico.
+    """
+    from .notifications import (_reminder_checkpoints, _reminder_tolerance_min,
+                                _now_brt_naive, _humanize_minutes, is_push_enabled)
+
+    now = _now_brt_naive()
+    try:
+        horizon_hours = max(1, int(request.args.get("hours", "72")))
+    except ValueError:
+        horizon_hours = 72
+    try:
+        daily_days = max(1, int(request.args.get("days", "7")))
+    except ValueError:
+        daily_days = 7
+
+    checkpoints = _reminder_checkpoints()
+    tol = _reminder_tolerance_min()
+    max_cp = max(checkpoints)
+    lookback = timedelta(hours=6)          # mostra janelas "missed" até 6h atrás
+    horizon_end = now + timedelta(hours=horizon_hours)
+
+    def _fmt(dt):
+        return dt.strftime("%Y-%m-%d %H:%M") if dt else None
+
+    with session_scope() as session:
+        cfg = session.query(ScoringConfig).get(1)
+        daily_hour = (
+            int(cfg.daily_reminder_hour)
+            if cfg and cfg.daily_reminder_hour is not None
+            else int(os.environ.get("BOLAO_DAILY_REMINDER_HOUR", "11"))
+        )
+
+        sub_uids = sorted({
+            r[0] for r in session.query(PushSubscription.participant_uid).distinct().all()
+        })
+        uid_to_p = {p.uid: p for p in session.query(Participant).all()}
+        predicted_pairs = {
+            (pred.participant_id, pred.game_id)
+            for pred in session.query(Prediction).all()
+        }
+
+        # log_key -> created_at (UTC) para pré-jogo e diário
+        pregame_logs = {
+            r[0]: r[1]
+            for r in session.query(NotificationLog.log_key, NotificationLog.created_at)
+            .filter(NotificationLog.log_key.like("pregame:%")).all()
+        }
+        daily_logs = {
+            r[0].split(":", 1)[1]: r[1]
+            for r in session.query(NotificationLog.log_key, NotificationLog.created_at)
+            .filter(NotificationLog.log_key.like("daily-missing:%")).all()
+        }
+
+        # ----- 1) Lembretes pré-jogo -----------------------------------------
+        games = (
+            session.query(Game)
+            .filter(Game.kickoff > now - timedelta(minutes=max_cp + tol))
+            .filter(Game.kickoff <= horizon_end + timedelta(minutes=max_cp))
+            .order_by(Game.kickoff)
+            .all()
+        )
+
+        pregame = []
+        pregame_summary = {"scheduled": 0, "active": 0, "fired": 0, "missed": 0}
+        for game in games:
+            # Alvos atuais (instantâneo): inscritos push sem palpite neste jogo
+            targets = []
+            for uid in sub_uids:
+                p = uid_to_p.get(uid)
+                if not p or (p.id, game.id) in predicted_pairs:
+                    continue
+                targets.append({"name": p.name, "uid": uid, "short": uid[:8]})
+
+            for C in checkpoints:
+                earliest = game.kickoff - timedelta(minutes=C)
+                latest = game.kickoff - timedelta(minutes=max(C - tol, 1))
+                if earliest < now - lookback or earliest > horizon_end:
+                    continue  # fora da janela de interesse
+
+                notified = [
+                    t for t in targets
+                    if f"pregame:{game.id}:{t['uid']}:{C}" in pregame_logs
+                ]
+                first_fired_brt = None
+                if notified:
+                    fired_utc = min(pregame_logs[f"pregame:{game.id}:{t['uid']}:{C}"] for t in notified)
+                    first_fired_brt = fired_utc - timedelta(hours=3)
+
+                window_passed = now > latest
+                if window_passed:
+                    status = "fired" if (not targets or len(notified) == len(targets)) else "missed"
+                elif now >= earliest:
+                    status = "active"
+                else:
+                    status = "scheduled"
+                pregame_summary[status] += 1
+
+                pregame.append({
+                    "game_id": game.id,
+                    "teams": f"{game.team_a} x {game.team_b}",
+                    "kickoff_brt": _fmt(game.kickoff),
+                    "checkpoint_min": C,
+                    "checkpoint_label": _humanize_minutes(C),
+                    "fire_window_brt": {"earliest": _fmt(earliest), "latest": _fmt(latest)},
+                    "status": status,
+                    "target_count": len(targets),
+                    "already_notified_count": len(notified),
+                    "first_fired_at_brt": _fmt(first_fired_brt),
+                    "targets": [{"name": t["name"], "uid": t["short"]} for t in targets[:200]],
+                })
+
+        pregame.sort(key=lambda e: (e["fire_window_brt"]["earliest"], e["game_id"], e["checkpoint_min"]))
+
+        # ----- 2) Lembrete diário de palpites faltantes ----------------------
+        last_game = session.query(Game).order_by(Game.kickoff.desc()).first()
+        last_date = last_game.kickoff.date() if last_game else now.date()
+        end_date = min(now.date() + timedelta(days=daily_days - 1), last_date)
+
+        daily = []
+        daily_summary = {"scheduled": 0, "active": 0, "fired": 0, "missed": 0, "no_games": 0}
+        d = now.date()
+        while d <= end_date:
+            day_key = d.isoformat()
+            start_of_day = datetime.combine(d, datetime.min.time())
+            end_of_day = datetime.combine(d, datetime.max.time())
+            games_day = (
+                session.query(Game)
+                .filter(Game.kickoff >= start_of_day, Game.kickoff <= end_of_day)
+                .order_by(Game.kickoff).all()
+            )
+            fire_at = datetime.combine(d, datetime.min.time()) + timedelta(hours=daily_hour)
+
+            entry = {
+                "date": day_key,
+                "fire_at_brt": _fmt(fire_at),
+                "games_that_day": len(games_day),
+                "games_open_now": None,
+                "status": None,
+                "fired_at_brt": None,
+                "target_count": 0,
+                "targets": [],
+            }
+
+            if day_key in daily_logs:
+                entry["status"] = "fired"
+                entry["fired_at_brt"] = (daily_logs[day_key] - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+            elif d < now.date():
+                entry["status"] = "missed" if games_day else "no_games"
+            elif not games_day:
+                entry["status"] = "no_games"
+            elif d == now.date() and now >= fire_at:
+                entry["status"] = "active"  # dispara no próximo tick (<=60s)
+            else:
+                entry["status"] = "scheduled"
+
+            # Alvos: só computa para HOJE (outros dias o palpite ainda muda)
+            if d == now.date() and games_day:
+                open_games = [g for g in games_day if g.kickoff > now]
+                entry["games_open_now"] = len(open_games)
+                for uid in sub_uids:
+                    p = uid_to_p.get(uid)
+                    if not p:
+                        continue
+                    missing = [g.id for g in open_games if (p.id, g.id) not in predicted_pairs]
+                    if missing:
+                        entry["targets"].append({"name": p.name, "uid": uid[:8], "missing_games": missing})
+                entry["target_count"] = len(entry["targets"])
+
+            daily_summary[entry["status"]] = daily_summary.get(entry["status"], 0) + 1
+            daily.append(entry)
+            d += timedelta(days=1)
+
+    return jsonify({
+        "now_brt": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "push_enabled": is_push_enabled(),
+        "config": {
+            "pregame_checkpoints_min": checkpoints,
+            "pregame_tolerance_min": tol,
+            "notify_interval_seconds": NOTIFY_INTERVAL_SECONDS,
+            "daily_reminder_hour_brt": daily_hour,
+            "horizon_hours": horizon_hours,
+            "daily_days": daily_days,
+        },
+        "summary": {"pregame": pregame_summary, "daily": daily_summary},
+        "pregame": pregame,
+        "daily": daily,
+    })
+
+
 @app.route("/change-password", methods=["POST"])
 @token_required
 def change_password():
