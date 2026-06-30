@@ -220,7 +220,10 @@ def parse_espn_event(event: dict) -> dict | None:
         "away": away,
         "state": state,
         "completed": completed,
-        "is_full_time": state == "post" and completed and detail in ("FT", "AET", "PEN"),
+        # detail: 'FT' (90min), 'AET' (prorrogação, placar c/ vencedor),
+        # 'FT-Pens' (pênaltis, placar do EMPATE — ESPN não soma o shoot-out).
+        # Obs: a ESPN usa 'FT-Pens' e não 'PEN' (mantido por compat/segurança).
+        "is_full_time": state == "post" and completed and detail in ("FT", "AET", "PEN", "FT-Pens"),
         "display_clock": display_clock,
         "detail": detail,
         "date": event.get("date", ""),
@@ -404,10 +407,73 @@ def create_games_from_espn(dates_param: str, dry_run: bool = False, allow_past: 
     return results
 
 
+def _expand_espn_dates(dates_param: str) -> list[str]:
+    """Expande dates_param (data única ou range INICIO-FIM) em lista de datas
+    ESPN (8 dígitos) INCLUINDO o dia anterior de cada data.
+
+    A ESPN classifica cada evento pelo dia em timezone *Eastern* (EDT/EST),
+    que pode ser UM DIA ATRÁS do dia em Brasília para jogos nas primeiras
+    horas do dia BRT (ex.: 03/07 00:00 BRT = 02/07 23:00 EDT -> a ESPN
+    lista no dia 02/07). Como o casamento é por espn_id (chave estável),
+    buscar datas a mais é seguro (nunca renomeia o jogo errado).
+    """
+    dates_param = dates_param.strip()
+    out: set[str] = set()
+
+    def _add_with_prev(d0):
+        out.add(d0.strftime("%Y%m%d"))
+        out.add((d0 - timedelta(days=1)).strftime("%Y%m%d"))
+
+    if "-" in dates_param:
+        parts = dates_param.split("-")
+        # Range "20260628-20260720" (2 partes de 8 dígitos) vs
+        # data ISO "2026-07-03" (3 partes).
+        if len(parts) == 2 and len(parts[0]) == 8 and len(parts[1]) == 8:
+            try:
+                d0 = datetime.strptime(parts[0], "%Y%m%d").date()
+                d1 = datetime.strptime(parts[1], "%Y%m%d").date()
+                cur = d0
+                while cur <= d1:
+                    _add_with_prev(cur)
+                    cur += timedelta(days=1)
+            except ValueError:
+                out.add(parts[0])
+        else:
+            single = dates_param.replace("-", "")
+            try:
+                _add_with_prev(datetime.strptime(single, "%Y%m%d").date())
+            except ValueError:
+                out.add(single)
+    else:
+        try:
+            _add_with_prev(datetime.strptime(dates_param, "%Y%m%d").date())
+        except ValueError:
+            out.add(dates_param)
+    return sorted(out)
+
+
 def resolve_team_names(bolao_games: list[dict], dates_param: str, dry_run: bool = False) -> list[dict]:
     """Renomeia placeholders no bolão quando a ESPN já definiu os times reais.
     Casa por espn_id (chave estável) e atualiza team_a/team_b via PUT."""
-    events = fetch_espn_events_raw(dates_param)
+    # Busca datas expandidas (inclui o dia anterior — ver _expand_espn_dates)
+    # porque a ESPN classifica eventos pelo dia em timezone Eastern, que pode
+    # ser um dia atrás do dia em Brasília. Dedupe por espn_id para evitar
+    # reprocessar o mesmo evento retornado em datas adjacentes.
+    events = []
+    seen_ids = set()
+    for ds in _expand_espn_dates(dates_param):
+        try:
+            evs = fetch_espn_events_raw(ds)
+        except Exception as e:
+            log.error(f"ESPN {ds}: {e}")
+            continue
+        for ev in evs:
+            eid = str(ev.get("id", ""))
+            if eid and eid in seen_ids:
+                continue
+            if eid:
+                seen_ids.add(eid)
+            events.append(ev)
     results = []
     for event in events:
         parsed = parse_espn_event(event)
@@ -477,7 +543,7 @@ def sync_date(date_str: str, bolao_games: list[dict], dry_run: bool = False, for
         else:
             log.info(f"⏳ AGENDADO {home_pt} x {away_pt} — {parsed['detail']}")
 
-        # Só atualiza se o jogo foi completamente finalizado (FT/AET/PEN)
+        # Só atualiza se o jogo foi completamente finalizado (FT/AET/FT-Pens)
         if not parsed["is_full_time"]:
             results.append({
                 "status": parsed["state"],

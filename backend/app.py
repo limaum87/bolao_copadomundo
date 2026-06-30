@@ -119,7 +119,7 @@ def _do_sync(now=None):
     Executa sincronização ESPN → banco.
 
     Proteções (em ordem):
-      1. Só jogos finalizados segundo a ESPN (is_full_time = FT/AET/PEN)
+      1. Só jogos finalizados segundo a ESPN (is_full_time = FT/AET/FT-Pens)
       2. 🔒 Só jogos cujo kickoff <= now (NUNCA jogos futuros)
 
     Comportamento de placar (modo "corrige ao fim"):
@@ -289,43 +289,52 @@ def _do_resolve_names():
         if not placeholders:
             return []
 
-        # Agrupa por data (formato ESPN YYYYMMDD do kickoff) p/ buscar em lote.
-        by_date = {}
+        # Datas ESPN a buscar. A ESPN classifica cada evento pelo dia em
+        # timezone *Eastern* (EDT/EST), que pode ser UM DIA ATRÁS do dia em
+        # Brasília para jogos nas primeiras horas do dia BRT
+        # (ex.: 03/07 00:00 BRT = 02/07 23:00 EDT -> a ESPN lista no dia 02/07).
+        # Por isso buscamos também o dia anterior ao do kickoff. O casamento
+        # é por espn_id (chave estável), então buscar datas a mais é seguro
+        # (nunca renomeia o jogo errado). Mesma lógica já usada no _do_sync().
+        espn_dates = set()
         for g in placeholders:
-            if g.kickoff:
-                by_date.setdefault(g.kickoff.strftime("%Y%m%d"), []).append(g)
+            if not g.kickoff:
+                continue
+            day = g.kickoff.date()
+            espn_dates.add(day.strftime("%Y%m%d"))
+            espn_dates.add((day - timedelta(days=1)).strftime("%Y%m%d"))
 
-        results = []
-        renamed = 0
-        for date_str, games_on_date in by_date.items():
+        # Indexa TODOS os eventos da ESPN por espn_id (casa por chave estável,
+        # independente do dia em que a ESPN os classificou).
+        espn_by_id = {}
+        for date_str in sorted(espn_dates):
             try:
                 events = fetch_espn_events_raw(date_str)
             except Exception as e:
                 _sync_log.error("⏰ [rename] erro ESPN %s: %s", date_str, e)
                 continue
-
-            # Indexa eventos por espn_id (casa independentemente de fuso).
-            espn_by_id = {}
             for ev in events:
                 parsed = parse_espn_event(ev)
                 if parsed and parsed.get("espn_id"):
                     espn_by_id[str(parsed["espn_id"])] = parsed
 
-            for g in games_on_date:
-                parsed = espn_by_id.get(str(g.espn_id))
-                if not parsed:
-                    continue
-                home_pt = parsed["home"]["name_pt"]
-                away_pt = parsed["away"]["name_pt"]
-                # Só renomeia se algum lado mudou.
-                if g.team_a == home_pt and g.team_b == away_pt:
-                    continue
-                old = f"{g.team_a} x {g.team_b}"
-                g.team_a = home_pt
-                g.team_b = away_pt
-                renamed += 1
-                results.append({"game_id": g.id, "from": old, "to": f"{home_pt} x {away_pt}"})
-                _sync_log.info("🔁 [rename] jogo %d: %s -> %s", g.id, old, f"{home_pt} x {away_pt}")
+        results = []
+        renamed = 0
+        for g in placeholders:
+            parsed = espn_by_id.get(str(g.espn_id))
+            if not parsed:
+                continue
+            home_pt = parsed["home"]["name_pt"]
+            away_pt = parsed["away"]["name_pt"]
+            # Só renomeia se algum lado mudou.
+            if g.team_a == home_pt and g.team_b == away_pt:
+                continue
+            old = f"{g.team_a} x {g.team_b}"
+            g.team_a = home_pt
+            g.team_b = away_pt
+            renamed += 1
+            results.append({"game_id": g.id, "from": old, "to": f"{home_pt} x {away_pt}"})
+            _sync_log.info("🔁 [rename] jogo %d: %s -> %s", g.id, old, f"{home_pt} x {away_pt}")
 
         if renamed:
             _sync_log.info("⏰ [rename] %d jogo(s) renomeado(s) (placeholder -> time real)", renamed)
