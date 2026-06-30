@@ -294,7 +294,10 @@ def _plan_pregame_reminders(session, now: datetime | None = None,
             if not (C - tol <= minutes_to <= C):
                 continue
             title = f"⚽ Falta seu palpite: {game.team_a} x {game.team_b}"
-            body = f"Faltam {_humanize_minutes(minutes_to)} pro jogo. Dá seu palpite agora!"
+            # Usa o checkpoint C (sempre múltiplo de hora: 180/120/60) como
+            # referência do texto — não minutes_to, que arredondado p/ baixo
+            # (119 min -> "~1h") fazia o lembrete das 2h anunciar "falta 1h".
+            body = f"Faltam {_humanize_minutes(C)} pro jogo. Dá seu palpite agora!"
             for uid in subs_uids:
                 p = uid_to_p.get(uid)
                 if not p:

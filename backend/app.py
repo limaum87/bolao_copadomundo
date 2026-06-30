@@ -1277,10 +1277,14 @@ def admin_diagnostics_notifications_upcoming():
             r[0] for r in session.query(PushSubscription.participant_uid).distinct().all()
         })
         uid_to_p = {p.uid: p for p in session.query(Participant).all()}
-        predicted_pairs = {
-            (pred.participant_id, pred.game_id)
+        # (participant_id, game_id) -> created_at (UTC). Mantém predicted_pairs
+        # como set p/ filtros rápidos; o created_at serve para cruzar com o
+        # disparo do lembrete (recebeu apesar de já ter palpitado?).
+        pred_created = {
+            (pred.participant_id, pred.game_id): pred.created_at
             for pred in session.query(Prediction).all()
         }
+        predicted_pairs = set(pred_created)
 
         # log_key -> created_at (UTC) para pré-jogo e diário
         pregame_logs = {
@@ -1320,18 +1324,45 @@ def admin_diagnostics_notifications_upcoming():
                 if earliest < now - lookback or earliest > horizon_end:
                     continue  # fora da janela de interesse
 
-                notified = [
-                    t for t in targets
-                    if f"pregame:{game.id}:{t['uid']}:{C}" in pregame_logs
+                # Recipients = quem de fato recebeu este checkpoint (verdade
+                # histórica lida do NotificationLog, chave pregame:{game}:{uid}:{C}).
+                # Não depende do filtro de 'alvo pendente' — inclui quem palpitou
+                # DEPOIS do disparo, justamente p/ auditar bug de filtragem.
+                recipients = []
+                fire_utc = None
+                for uid in sub_uids:
+                    key = f"pregame:{game.id}:{uid}:{C}"
+                    if key not in pregame_logs:
+                        continue
+                    p = uid_to_p.get(uid)
+                    rec = {"name": p.name if p else "?", "uid": uid[:8]}
+                    fired_at_utc = pregame_logs[key]
+                    rec["fired_at_brt"] = (fired_at_utc - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+                    # Cruzamento com o palpite: houve bug de filtragem?
+                    pred_utc = pred_created.get((p.id, game.id)) if p else None
+                    if pred_utc is not None:
+                        rec["predicted_at_brt"] = (pred_utc - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+                        # Palpitou em ou antes do disparo → não deveria ter recebido.
+                        rec["received_despite_predicted"] = pred_utc <= fired_at_utc
+                    else:
+                        rec["predicted_at_brt"] = None
+                        rec["received_despite_predicted"] = False
+                    recipients.append(rec)
+                    if fire_utc is None or fired_at_utc < fire_utc:
+                        fire_utc = fired_at_utc
+                first_fired_brt = (fire_utc - timedelta(hours=3)) if fire_utc else None
+
+                # Pendentes atuais: inscritos sem palpite E sem log deste checkpoint.
+                pending = [
+                    {"name": t["name"], "uid": t["short"]}
+                    for t in targets
+                    if f"pregame:{game.id}:{t['uid']}:{C}" not in pregame_logs
                 ]
-                first_fired_brt = None
-                if notified:
-                    fired_utc = min(pregame_logs[f"pregame:{game.id}:{t['uid']}:{C}"] for t in notified)
-                    first_fired_brt = fired_utc - timedelta(hours=3)
 
                 window_passed = now > latest
                 if window_passed:
-                    status = "fired" if (not targets or len(notified) == len(targets)) else "missed"
+                    # Ainda há quem falta ser avisado e não foi → 'missed'.
+                    status = "missed" if pending else "fired"
                 elif now >= earliest:
                     status = "active"
                 else:
@@ -1346,10 +1377,11 @@ def admin_diagnostics_notifications_upcoming():
                     "checkpoint_label": _humanize_minutes(C),
                     "fire_window_brt": {"earliest": _fmt(earliest), "latest": _fmt(latest)},
                     "status": status,
-                    "target_count": len(targets),
-                    "already_notified_count": len(notified),
+                    "pending_count": len(pending),
+                    "recipient_count": len(recipients),
                     "first_fired_at_brt": _fmt(first_fired_brt),
-                    "targets": [{"name": t["name"], "uid": t["short"]} for t in targets[:200]],
+                    "recipients": recipients[:200],
+                    "pending": pending[:200],
                 })
 
         pregame.sort(key=lambda e: (e["fire_window_brt"]["earliest"], e["game_id"], e["checkpoint_min"]))
